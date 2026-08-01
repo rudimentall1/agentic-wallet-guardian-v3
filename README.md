@@ -64,7 +64,7 @@ policy customization - not a strict upgrade over every hosted option.
         │  2. Wallet Intelligence     │  <- mock | real RPC (web3.py)
         │  3. Token Intelligence       │  <- mock | real DexScreener
         │  4. Contract Intelligence     │  <- local lists, then mock | real Blockscout
-        │  5. Simulation                 │  <- pre-execution dry-run (still a stub - see below)
+        │  5. Simulation                 │  <- mock | real eth_call dry-run (see below)
         │  6. Threat Intelligence          │  <- local JSON allow/deny lists
         │  7. Policy Engine                 │  <- spending caps, reputation gates
         │  8. Risk Fusion                    │  <- signals -> single 0-100 score
@@ -97,7 +97,7 @@ guardian/
         wallet/           analyzer.py + providers.py (mock | RpcWalletDataProvider)
         token/            analyzer.py + providers.py (mock | DexScreenerTokenDataProvider)
         contract/         analyzer.py + providers.py (mock | BlockscoutContractDataProvider)
-        simulation/       pre-execution dry-run (pluggable, stubbed by default)
+        simulation/       pre-execution dry-run (mock | real eth_call when calldata is supplied)
         threat/           blocklist.py (local AddressList) + intelligence.py
     policy/             PolicyEngine + policy templates (spending caps, reputation gates)
     reputation/         AgentReputation (score derived from decision history)
@@ -110,7 +110,7 @@ mcp_server.py           MCP stdio server - same DecisionEngine, no HTTP required
 data/threat_lists/      local, operator-maintained allow/deny lists (empty by default - see its README)
 scripts/
     refresh_ofac_list.py   fetch OFAC's public SDN list into the local threat list
-tests/                  53 tests covering the engine, policy, reputation, and every provider
+tests/                  67 tests covering the engine, policy, reputation, and every provider
 ```
 
 `guardian/*` is intentionally dependency-free (standard library only,
@@ -152,10 +152,18 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   end-to-end against the live OFAC endpoint from this codebase's own build
   environment (no network path to treasury.gov there). Run and check it
   yourself before relying on it.
-- **Simulation is still a stub.** This remains the single highest-value
-  next step: a real pre-execution dry-run (a forked-node `eth_call`,
-  Tenderly, or similar) tells you what a transaction *actually does*,
-  which no amount of statistical risk-scoring can substitute for.
+- **Simulation is real, but conditional.** `RpcSimulationProvider`
+  (`GUARDIAN_SIMULATION_PROVIDER=rpc`) genuinely dry-runs a transaction via
+  `eth_call`/`eth_estimateGas` against current chain state - a revert comes
+  back with its actual reason, not a guess, and ERC-20 `approve()` amounts
+  are decoded from real calldata instead of inferred. The catch: this only
+  activates when the caller supplies raw calldata via
+  `intent.metadata["data"]`. A high-level intent like "swap 5 ETH for
+  USDC" with no transaction built yet has nothing to dry-run - Guardian
+  reports that honestly (`simulation_not_attempted`) rather than guessing,
+  and falls back to the same weaker heuristic as before. Building an
+  actual transaction from a semantic intent (resolving a DEX route, token
+  addresses, etc.) is a separate, much larger problem this doesn't solve.
 - **Storage:** `InMemoryStorage` (default, zero setup) or `SQLiteStorage`
   (`GUARDIAN_STORAGE_BACKEND=sqlite` - persists across restarts, no
   external infra). Neither is a fit for many replicas writing
@@ -267,7 +275,12 @@ against Python 3.11 and 3.12.
 1. ~~Replace the mock wallet/token/contract analyzers with real data
    sources.~~ Done - see [Honesty about the current state](#honesty-about-the-current-state)
    for what "real" does and doesn't cover yet per source.
-2. Wire up real pre-execution simulation - still the biggest open gap.
+2. ~~Wire up real pre-execution simulation.~~ Done for the case where
+   the caller supplies built transaction calldata
+   (`GUARDIAN_SIMULATION_PROVIDER=rpc`) - see
+   [Honesty about the current state](#honesty-about-the-current-state)
+   for the real limit (no calldata yet = nothing to dry-run). Building a
+   transaction from a semantic intent (DEX routing, etc.) is still open.
 3. ~~Populate threat-intel / sanctions feeds; stop shipping empty
    sets.~~ Infrastructure is in place (`data/threat_lists/`,
    `scripts/refresh_ofac_list.py`); the lists themselves still ship empty
