@@ -55,6 +55,7 @@ class GuardianConfig:
     wallet_provider: str = field(default_factory=lambda: os.environ.get("GUARDIAN_WALLET_PROVIDER", "mock"))
     contract_provider: str = field(default_factory=lambda: os.environ.get("GUARDIAN_CONTRACT_PROVIDER", "mock"))
     token_provider: str = field(default_factory=lambda: os.environ.get("GUARDIAN_TOKEN_PROVIDER", "mock"))
+    simulation_provider: str = field(default_factory=lambda: os.environ.get("GUARDIAN_SIMULATION_PROVIDER", "null"))
 
     rpc_urls: Dict[str, str] = field(default_factory=_rpc_urls_from_env)
     estimate_wallet_age: bool = field(default_factory=lambda: _bool("GUARDIAN_RPC_ESTIMATE_AGE", False))

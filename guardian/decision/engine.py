@@ -26,7 +26,7 @@ from guardian.core.models import Decision, DecisionType, PolicyViolation
 from guardian.decision.rules import evaluate_hard_rules
 from guardian.decision.scoring import RiskFusionEngine
 from guardian.intelligence.contract.analyzer import ContractAnalyzer, build_contract_provider
-from guardian.intelligence.simulation.engine import SimulationEngine
+from guardian.intelligence.simulation.engine import SimulationEngine, build_simulation_provider
 from guardian.intelligence.threat.blocklist import AddressList
 from guardian.intelligence.threat.intelligence import ThreatIntelligence
 from guardian.intelligence.token.analyzer import TokenAnalyzer, build_token_provider
@@ -61,6 +61,7 @@ class DecisionEngine:
         wallet_analyzer: Optional[WalletAnalyzer] = None,
         token_analyzer: Optional[TokenAnalyzer] = None,
         contract_analyzer: Optional[ContractAnalyzer] = None,
+        simulation_engine: Optional[SimulationEngine] = None,
     ):
         config = config or get_config()
         self.wallet_analyzer = wallet_analyzer or WalletAnalyzer(build_wallet_provider(config))
@@ -70,7 +71,7 @@ class DecisionEngine:
             known_safe=AddressList(config.verified_contracts_path),
             known_malicious=AddressList(config.malicious_contracts_path),
         )
-        self.simulation_engine = SimulationEngine()
+        self.simulation_engine = simulation_engine or SimulationEngine(build_simulation_provider(config))
         self.threat_intel = ThreatIntelligence(AddressList(config.sanctioned_addresses_path))
         self.risk_fusion = RiskFusionEngine()
         self.policy_engine = policy_engine or PolicyEngine()
