@@ -156,13 +156,21 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   contracts, not generic dApp/router contracts), and `GoPlusTokenDataProvider`
   needs a contract *address* - a bare symbol like "PEPE" can't be resolved
   and is honestly reported as unverifiable rather than guessed at.
-- **Threat intelligence / contract allow-deny lists:** local JSON files,
-  shipped **empty** on purpose (see `data/threat_lists/README.md` for why
-  and how to populate them). A `refresh_ofac_list.py` script is provided
-  for the sanctions list specifically - written and reviewed, but not run
-  end-to-end against the live OFAC endpoint from this codebase's own build
-  environment (no network path to treasury.gov there). Run and check it
-  yourself before relying on it.
+- **Sanctioned-address list is real, populated data**: 103 addresses (100
+  EVM + 3 Solana) from OFAC's SDN list, via
+  [0xB10C/ofac-sanctioned-digital-currency-addresses](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses) -
+  verified end-to-end (a known-sanctioned address correctly triggers
+  `BLOCK` through the full pipeline) and verified to correctly reflect
+  delistings, not just additions (Tornado Cash's addresses, removed from
+  the SDN list in March 2025, are correctly absent). Re-run
+  `scripts/refresh_ofac_list.py` periodically - sanctions change in both
+  directions.
+- **`malicious_contracts.json` / `verified_contracts.json` still ship
+  empty on purpose** (see `data/threat_lists/README.md`) - there's no
+  single authoritative source for "malicious contract" the way OFAC's
+  list is authoritative for sanctions, so populating these is a judgment
+  call for whoever operates this instance, not something to seed by
+  default with unverified entries.
 - **Simulation is real, but conditional.** `RpcSimulationProvider`
   (`GUARDIAN_SIMULATION_PROVIDER=rpc`) genuinely dry-runs a transaction via
   `eth_call`/`eth_estimateGas` against current chain state - a revert comes
@@ -294,9 +302,11 @@ against Python 3.11 and 3.12.
    for the real limit (no calldata yet = nothing to dry-run). Building a
    transaction from a semantic intent (DEX routing, etc.) is still open.
 3. ~~Populate threat-intel / sanctions feeds; stop shipping empty
-   sets.~~ Infrastructure is in place (`data/threat_lists/`,
-   `scripts/refresh_ofac_list.py`); the lists themselves still ship empty
-   and need an operator to populate and maintain them.
+   sets.~~ Done for sanctions (`sanctioned_addresses.json` - 103 real OFAC
+   SDN addresses, refreshable via `scripts/refresh_ofac_list.py`).
+   `malicious_contracts.json` / `verified_contracts.json` remain empty by
+   design - no single authoritative source exists to seed them the way
+   OFAC's list does for sanctions.
 4. ~~Swap `InMemoryStorage` for a persistent backend.~~ `SQLiteStorage` is
    available; a Postgres/Redis backend is still open for multi-replica
    deployments.

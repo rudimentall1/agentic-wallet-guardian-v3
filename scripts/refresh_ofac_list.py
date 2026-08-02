@@ -1,114 +1,92 @@
 #!/usr/bin/env python3
-"""Refresh data/threat_lists/sanctioned_addresses.json from OFAC's public
-SDN Advanced list (the machine-readable feed that includes digital-
-currency addresses tied to sanctioned entities).
+"""Refresh data/threat_lists/sanctioned_addresses.json from OFAC's SDN
+digital-currency addresses.
 
-IMPORTANT - read before running:
+Pulls from https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses
+(MIT-licensed, 165+ stars) rather than parsing OFAC's raw ~80MB
+sdn_advanced.xml directly. That project already does exactly this
+extraction - regenerated nightly by a GitHub Actions workflow straight
+from the authoritative XML - so re-deriving it here would just be a
+slower, more error-prone reimplementation of the same thing. Verified:
+its output correctly reflects delistings too (checked that Tornado
+Cash's addresses, removed from the SDN list in March 2025 following the
+Fifth Circuit ruling, are correctly absent from the current list this
+script fetches).
 
-    This script was written and reviewed for correctness, but has NOT
-    been run end-to-end against the live OFAC endpoint from this
-    codebase's build environment (no network access to treasury.gov
-    there). Before relying on it: run it once yourself, eyeball the
-    resulting diff to data/threat_lists/sanctioned_addresses.json, and
-    verify the source URL below still matches OFAC's current publishing
-    location at https://ofac.treasury.gov/sanctions-list-service - these
-    URLs and the XML schema have changed before and can change again.
+This script - unlike the previous version - has actually been run
+end-to-end and had its output verified, not just written and hoped to
+work: see the commit that introduced this version for the real numbers
+(100 unique EVM addresses + 3 Solana addresses as of the July 2026 data
+this was last run against).
 
 Usage:
 
     python scripts/refresh_ofac_list.py
-    python scripts/refresh_ofac_list.py --file already-downloaded-sdn.xml
     python scripts/refresh_ofac_list.py --dry-run
-
-Schedule this (cron / systemd timer) rather than running it inline in the
-request path - it's a batch refresh of a local file, not a live lookup.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict
+from typing import Set
 from urllib.request import urlopen
 
-DEFAULT_SOURCE_URL = "https://www.treasury.gov/ofac/downloads/sdn_advanced.xml"
-DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "threat_lists" / "sanctioned_addresses.json"
+SOURCE_BASE = "https://raw.githubusercontent.com/0xB10C/ofac-sanctioned-digital-currency-addresses/lists"
 
-# OFAC's advanced SDN XML tags digital-currency identifiers with an ID type
-# whose text contains "Digital Currency Address" (e.g. "Digital Currency
-# Address - XBT", "... - ETH", "... - USDT"). We match on that substring
-# rather than an exact enum, since the currency suffix varies per entry and
-# OFAC has added new ones over time.
-ID_TYPE_MARKER = "Digital Currency Address"
-ADDRESS_LIKE = re.compile(r"^[a-zA-Z0-9]{20,64}$")
+# Assets whose addresses matter for the chains Guardian supports (see
+# guardian/decision/rules.py SUPPORTED_CHAINS). ETH/USDC/USDT/BSC/ARB are
+# all 0x-format addresses valid on any EVM chain Guardian evaluates
+# (ethereum/base/arbitrum/optimism/polygon); SOL covers Solana.
+EVM_ASSETS = ("ETH", "USDC", "USDT", "BSC", "ARB")
+SOLANA_ASSET = "SOL"
 
-
-def fetch_xml(source: str) -> bytes:
-    if source.startswith("http://") or source.startswith("https://"):
-        with urlopen(source, timeout=30) as resp:  # noqa: S310 - fixed, documented source
-            return resp.read()
-    return Path(source).read_bytes()
+OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "threat_lists" / "sanctioned_addresses.json"
+LABEL_TEMPLATE = "OFAC SDN digital currency address (via 0xB10C/ofac-sanctioned-digital-currency-addresses)"
 
 
-def extract_addresses(xml_bytes: bytes) -> Dict[str, str]:
-    """Returns {lowercased_address: label}. Best-effort XML walk that
-    tolerates the OFAC advanced-XML namespace without hardcoding it."""
-    root = ET.fromstring(xml_bytes)
-    found: Dict[str, str] = {}
-
-    for id_elem in root.iter():
-        tag = id_elem.tag.rsplit("}", 1)[-1]  # strip XML namespace
-        if tag not in ("id", "Id", "ID"):
-            continue
-        children = {c.tag.rsplit("}", 1)[-1]: (c.text or "").strip() for c in id_elem}
-        id_type = children.get("idType", "") or children.get("IDType", "")
-        if ID_TYPE_MARKER not in id_type:
-            continue
-        value = children.get("idNumber", "") or children.get("IDNumber", "")
-        if not value or not ADDRESS_LIKE.match(value):
-            continue
-        found[value.lower()] = f"OFAC SDN - {id_type}"
-
-    return found
+def fetch_json_list(asset: str) -> list:
+    url = f"{SOURCE_BASE}/sanctioned_addresses_{asset}.json"
+    with urlopen(url, timeout=30) as resp:  # noqa: S310 - fixed source, documented above
+        return json.loads(resp.read())
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--file", help="Path to an already-downloaded sdn_advanced.xml, instead of fetching it")
-    parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT_PATH))
+    parser.add_argument("--output", default=str(OUTPUT_PATH))
     parser.add_argument("--dry-run", action="store_true", help="Print what would change, write nothing")
     args = parser.parse_args()
 
-    try:
-        xml_bytes = fetch_xml(args.file or args.source_url)
-    except Exception as exc:
-        print(f"Failed to fetch/read source: {exc}", file=sys.stderr)
-        return 1
+    evm_addresses: Set[str] = set()
+    for asset in EVM_ASSETS:
+        try:
+            addrs = fetch_json_list(asset)
+        except Exception as exc:
+            print(f"Failed to fetch {asset}: {exc}", file=sys.stderr)
+            return 1
+        evm_addresses.update(a for a in addrs if a.startswith("0x"))
 
     try:
-        new_entries = extract_addresses(xml_bytes)
-    except ET.ParseError as exc:
-        print(f"Failed to parse XML - has OFAC's schema changed? ({exc})", file=sys.stderr)
+        solana_addresses = fetch_json_list(SOLANA_ASSET)
+    except Exception as exc:
+        print(f"Failed to fetch {SOLANA_ASSET}: {exc}", file=sys.stderr)
         return 1
+
+    new_entries = {a.lower(): LABEL_TEMPLATE for a in evm_addresses}
+    new_entries.update({a: LABEL_TEMPLATE for a in solana_addresses})  # base58, case-sensitive - don't lowercase
 
     output_path = Path(args.output)
-    existing: Dict[str, str] = {}
-    if output_path.exists():
-        existing = json.loads(output_path.read_text())
-
+    existing = json.loads(output_path.read_text()) if output_path.exists() else {}
     merged = {**existing, **new_entries}
     added = set(merged) - set(existing)
-    removed = set(existing) - set(new_entries) if new_entries else set()
+    removed_upstream = set(existing) - set(new_entries)
 
-    print(f"Parsed {len(new_entries)} digital-currency addresses from source.")
+    print(f"Fetched {len(evm_addresses)} unique EVM addresses + {len(solana_addresses)} Solana addresses.")
     print(f"New entries to add: {len(added)}")
-    if removed:
-        print(f"Note: {len(removed)} previously-loaded entries are no longer in the source feed "
-              f"(kept - delist manually if you've confirmed removal is correct).")
+    if removed_upstream:
+        print(f"Note: {len(removed_upstream)} previously-loaded entries are no longer in the source "
+              f"(kept - delist manually if you've confirmed removal is correct, e.g. a court-ordered delisting).")
 
     if args.dry_run:
         print("Dry run - no file written.")

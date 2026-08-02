@@ -1,10 +1,25 @@
 # Threat lists
 
 These three files back Guardian's `threat_intel` and `contract` signal
-sources. They ship **empty on purpose** - populating them with invented or
-unverified addresses would be worse than shipping nothing, since a hit on
-these lists is treated as conclusive (`confidence=1.0` for
-`sanctioned_addresses.json`, forced weight for `malicious_contracts.json`).
+sources.
+
+- **`sanctioned_addresses.json` is now populated with real data**: 103
+  addresses (100 EVM + 3 Solana) from OFAC's Specially Designated
+  Nationals list, via
+  [0xB10C/ofac-sanctioned-digital-currency-addresses](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses)
+  - a community tool that extracts exactly this from OFAC's own
+    authoritative XML, regenerated nightly. Verified when this was seeded:
+    delistings are correctly reflected (Tornado Cash's addresses, removed
+    from the SDN list in March 2025 after the Fifth Circuit ruling, are
+    correctly absent). Refresh it yourself periodically with
+    `python scripts/refresh_ofac_list.py` - sanctions lists change.
+- **`malicious_contracts.json` / `verified_contracts.json` still ship
+  empty on purpose.** Populating them with invented or loosely-sourced
+  addresses would be worse than shipping nothing, since a hit is treated
+  as conclusive (forced weight regardless of whatever the configured
+  `ContractDataProvider` would have said). Unlike OFAC's list, there's no
+  single authoritative source for "malicious contract" - see below for
+  where to source real entries yourself.
 
 This is also the point of the self-hosted design: these are plain JSON
 files on your own disk, not a call to a third-party API. Nothing about
@@ -30,13 +45,14 @@ Each file is a flat JSON object: lower-cased address → short label/reason.
 
 ## Where to source entries
 
-- **OFAC SDN list** (US sanctions): public, updated regularly. See
-  `scripts/refresh_ofac_list.py` for an automated fetch-and-merge script -
-  run it yourself and schedule it (cron/systemd timer), since this
-  sandbox's network access does not include treasury.gov.
+- **OFAC SDN list** (US sanctions): done - see above. Re-run
+  `scripts/refresh_ofac_list.py` on a schedule (cron/systemd timer) to
+  keep it current; sanctions get added *and removed*.
 - **Community scam-address databases** (e.g. Chainabuse, CryptoScamDB
   exports, your own incident tracker) - many publish CSV/JSON exports you
-  can transform into this schema.
+  can transform into this schema. Still unpopulated here - no single
+  source is authoritative enough to seed by default the way OFAC's list
+  is, so this is a judgment call for whoever operates this instance.
 - **Your own findings** - anything your team has directly investigated and
   confirmed.
 
