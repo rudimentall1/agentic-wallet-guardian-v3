@@ -29,6 +29,16 @@ class TokenLiquidityProfile:
     is_concentrated: Optional[bool]
     data_source: str = "unknown"
     match_confidence: float = 1.0
+    # Populated only by providers that can see this (currently GoPlus) -
+    # None from Mock/DexScreener. Analyzer logic must treat None as
+    # "unknown", never as "false".
+    is_honeypot: Optional[bool] = None
+    buy_tax: Optional[float] = None
+    sell_tax: Optional[float] = None
+    is_blacklistable: Optional[bool] = None
+    is_pausable: Optional[bool] = None
+    top_holder_percent: Optional[float] = None
+    is_trusted_listed: Optional[bool] = None
 
 
 class TokenDataProvider(Protocol):
@@ -102,3 +112,94 @@ class DexScreenerTokenDataProvider:
             data_source="dexscreener",
             match_confidence=match_confidence,
         )
+
+
+def _looks_like_address(value: str) -> bool:
+    return value.startswith("0x") and len(value) == 42
+
+
+def _bool_field(data: dict, key: str) -> Optional[bool]:
+    val = data.get(key)
+    if val is None:
+        return None
+    return val == "1"
+
+
+class GoPlusTokenDataProvider:
+    """Real trading-security data via the GoPlus Security Token Security API.
+
+    Covers what liquidity-USD alone can't: honeypot detection, buy/sell
+    tax, blacklist/pause functions, and holder concentration - the actual
+    mechanisms scam tokens use, not just a proxy signal for them.
+
+    GoPlus needs a contract address, but ``ActionIntent.to_token`` /
+    ``from_token`` may carry either a symbol ("USDC") or an address
+    ("0x..."). This provider uses the address directly when given one;
+    for a bare symbol it honestly reports it cannot verify (via
+    ``match_confidence=0.0``) rather than guessing which of several
+    same-ticker tokens - real or fake - was meant. Have agents pass the
+    contract address when precision matters.
+    """
+
+    name = "goplus"
+
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key
+
+    def get_liquidity_profile(self, symbol: str, chain: str) -> TokenLiquidityProfile:
+        if not _looks_like_address(symbol):
+            return TokenLiquidityProfile(
+                symbol=symbol, liquidity_usd=None, is_concentrated=None,
+                data_source="goplus", match_confidence=0.0,
+            )
+
+        from guardian.intelligence.goplus_client import get_token_security
+
+        data = get_token_security(chain, symbol, api_key=self.api_key)
+        if data is None:
+            return TokenLiquidityProfile(symbol=symbol, liquidity_usd=None, is_concentrated=None, data_source="goplus")
+
+        if data.get("trust_list") == "1":
+            return TokenLiquidityProfile(
+                symbol=symbol, liquidity_usd=None, is_concentrated=False, data_source="goplus",
+                is_trusted_listed=True,
+            )
+
+        buy_tax = _safe_float(data.get("buy_tax"))
+        sell_tax = _safe_float(data.get("sell_tax"))
+        top_holder_percent = _top_unlocked_holder_percent(data.get("holders") or [])
+        has_dex_liquidity = _bool_field(data, "is_in_dex")
+
+        return TokenLiquidityProfile(
+            symbol=symbol,
+            liquidity_usd=None,  # GoPlus doesn't return a $ figure the way DexScreener does
+            is_concentrated=(has_dex_liquidity is False),  # holder concentration is its own signal below
+            data_source="goplus",
+            is_honeypot=_bool_field(data, "is_honeypot"),
+            buy_tax=buy_tax,
+            sell_tax=sell_tax,
+            is_blacklistable=_bool_field(data, "is_blacklisted"),
+            is_pausable=_bool_field(data, "transfer_pausable"),
+            top_holder_percent=top_holder_percent,
+            is_trusted_listed=False,
+        )
+
+
+def _safe_float(raw) -> Optional[float]:
+    try:
+        return float(raw) if raw not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _top_unlocked_holder_percent(holders: list) -> Optional[float]:
+    top = 0.0
+    seen_any = False
+    for h in holders:
+        pct = _safe_float(h.get("percent"))
+        if pct is None:
+            continue
+        seen_any = True
+        if h.get("tag") != "Burn Address" and h.get("is_locked") != "1":
+            top = max(top, pct)
+    return top if seen_any else None

@@ -62,8 +62,8 @@ policy customization - not a strict upgrade over every hosted option.
         ├───────────────────────────┤
         │  1. Hard Rules             │  <- chain support, sanity checks
         │  2. Wallet Intelligence     │  <- mock | real RPC (web3.py)
-        │  3. Token Intelligence       │  <- mock | real DexScreener
-        │  4. Contract Intelligence     │  <- local lists, then mock | real Blockscout
+        │  3. Token Intelligence       │  <- mock | real DexScreener | real GoPlus
+        │  4. Contract Intelligence     │  <- local lists, then mock | real Blockscout | real GoPlus
         │  5. Simulation                 │  <- mock | real eth_call dry-run (see below)
         │  6. Threat Intelligence          │  <- local JSON allow/deny lists
         │  7. Policy Engine                 │  <- spending caps, reputation gates
@@ -95,9 +95,10 @@ guardian/
     reasoning/          explanation + confidence builders
     intelligence/
         wallet/           analyzer.py + providers.py (mock | RpcWalletDataProvider)
-        token/            analyzer.py + providers.py (mock | DexScreenerTokenDataProvider)
-        contract/         analyzer.py + providers.py (mock | BlockscoutContractDataProvider)
+        token/            analyzer.py + providers.py (mock | DexScreenerTokenDataProvider | GoPlusTokenDataProvider)
+        contract/         analyzer.py + providers.py (mock | BlockscoutContractDataProvider | GoPlusContractDataProvider)
         simulation/       pre-execution dry-run (mock | real eth_call when calldata is supplied)
+        goplus_client.py  shared GoPlus Token Security API client (used by both contract + token)
         threat/           blocklist.py (local AddressList) + intelligence.py
     policy/             PolicyEngine + policy templates (spending caps, reputation gates)
     reputation/         AgentReputation (score derived from decision history)
@@ -110,7 +111,7 @@ mcp_server.py           MCP stdio server - same DecisionEngine, no HTTP required
 data/threat_lists/      local, operator-maintained allow/deny lists (empty by default - see its README)
 scripts/
     refresh_ofac_list.py   fetch OFAC's public SDN list into the local threat list
-tests/                  67 tests covering the engine, policy, reputation, and every provider
+tests/                  87 tests covering the engine, policy, reputation, and every provider
 ```
 
 `guardian/*` is intentionally dependency-free (standard library only,
@@ -145,6 +146,16 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   requested chain and reports its own match confidence rather than
   presenting a guess as certain - for anything where that ambiguity
   matters, match by contract address instead of symbol.
+- **Contract + Token (GoPlus provider):** real contract-security
+  (owner-can-drain, mintable, self-destruct, hidden owner) and
+  trading-security (honeypot, buy/sell tax, blacklist, pausable transfers,
+  holder concentration) from GoPlus's Token Security API - meaningfully
+  more signal types than Blockscout/DexScreener give individually, since
+  GoPlus's own static analysis covers both in one call. Two real limits:
+  it only has data for contracts it's actually analyzed (mostly token
+  contracts, not generic dApp/router contracts), and `GoPlusTokenDataProvider`
+  needs a contract *address* - a bare symbol like "PEPE" can't be resolved
+  and is honestly reported as unverifiable rather than guessed at.
 - **Threat intelligence / contract allow-deny lists:** local JSON files,
   shipped **empty** on purpose (see `data/threat_lists/README.md` for why
   and how to populate them). A `refresh_ofac_list.py` script is provided
@@ -234,7 +245,8 @@ default), `GUARDIAN_STORAGE_BACKEND=sqlite` (persistence), and whichever
 `GUARDIAN_*_PROVIDER` variables you want pointed at real data instead of
 mock - see the comments in `.env.example` for every option, and
 `RpcWalletDataProvider`/`BlockscoutContractDataProvider`/
-`DexScreenerTokenDataProvider`'s docstrings for what each one actually
+`DexScreenerTokenDataProvider`/`GoPlusContractDataProvider`/
+`GoPlusTokenDataProvider`'s docstrings for what each one actually
 gives you.
 
 ### MCP (no HTTP required)

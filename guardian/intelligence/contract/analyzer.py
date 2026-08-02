@@ -3,9 +3,11 @@
 Checks the target contract against local allow/deny lists first (see
 ``guardian/intelligence/threat/blocklist.py``), then falls back to a
 ``ContractDataProvider`` for anything unlisted - the mock heuristic by
-default, or ``BlockscoutContractDataProvider`` for a real verification
-check. Select via ``GUARDIAN_CONTRACT_PROVIDER`` (``mock`` |
-``blockscout``) - see ``guardian/config.py``.
+default, ``BlockscoutContractDataProvider`` for verification status, or
+``GoPlusContractDataProvider`` for real contract-security findings
+(owner-can-drain, mintable, self-destruct, hidden owner). Select via
+``GUARDIAN_CONTRACT_PROVIDER`` (``mock`` | ``blockscout`` | ``goplus``) -
+see ``guardian/config.py``.
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ from guardian.core.models import Signal
 from guardian.intelligence.contract.providers import (
     BlockscoutContractDataProvider,
     ContractDataProvider,
+    GoPlusContractDataProvider,
     MockContractDataProvider,
 )
 from guardian.intelligence.threat.blocklist import AddressList
@@ -25,6 +28,8 @@ def build_contract_provider(config) -> ContractDataProvider:
         return BlockscoutContractDataProvider(
             base_url=config.blockscout_base_url, timeout=config.provider_timeout_seconds,
         )
+    if config.contract_provider == "goplus":
+        return GoPlusContractDataProvider(api_key=config.goplus_api_key)
     return MockContractDataProvider()
 
 
@@ -87,6 +92,36 @@ class ContractAnalyzer:
                 source=self.source, name="upgradeable_contract", score=40, weight=1.2,
                 confidence=0.5,
                 reason="Contract uses an upgradeable proxy pattern - logic can change after approval",
+            ))
+
+        # Only ever set by providers that can actually see this (GoPlus) -
+        # Mock/Blockscout leave these None, so no signal fires for them.
+        if profile.owner_can_change_balance:
+            signals.append(Signal(
+                source=self.source, name="owner_can_change_balances", score=85, weight=2.5,
+                confidence=0.8,
+                reason="Contract owner can arbitrarily change holder balances - a direct rug vector",
+            ))
+
+        if profile.is_mintable:
+            signals.append(Signal(
+                source=self.source, name="mintable_supply", score=45, weight=1.0,
+                confidence=0.7,
+                reason="Contract owner can mint new supply, diluting existing holders at will",
+            ))
+
+        if profile.has_selfdestruct:
+            signals.append(Signal(
+                source=self.source, name="has_selfdestruct", score=70, weight=1.8,
+                confidence=0.8,
+                reason="Contract contains a self-destruct function that can remove its code and funds",
+            ))
+
+        if profile.has_hidden_owner:
+            signals.append(Signal(
+                source=self.source, name="hidden_owner", score=55, weight=1.3,
+                confidence=0.6,
+                reason="Contract owner is obfuscated - harder to assess who actually controls it",
             ))
 
         return signals

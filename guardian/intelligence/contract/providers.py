@@ -29,6 +29,13 @@ class ContractProfile:
     is_verified: Optional[bool]
     is_upgradeable: Optional[bool] = None
     data_source: str = "unknown"
+    # Populated only by providers that can see this (currently GoPlus) -
+    # None from Mock/Blockscout, which don't have this data. Analyzer
+    # logic must treat None as "unknown", never as "false".
+    owner_can_change_balance: Optional[bool] = None
+    is_mintable: Optional[bool] = None
+    has_selfdestruct: Optional[bool] = None
+    has_hidden_owner: Optional[bool] = None
 
 
 class ContractDataProvider(Protocol):
@@ -86,4 +93,55 @@ class BlockscoutContractDataProvider:
         return ContractProfile(
             address=address, is_verified=is_verified, is_upgradeable=is_upgradeable,
             data_source="blockscout",
+        )
+
+
+def _bool_field(data: dict, key: str) -> Optional[bool]:
+    """GoPlus encodes booleans as the strings "0"/"1" - missing key means
+    unknown, not false."""
+    val = data.get(key)
+    if val is None:
+        return None
+    return val == "1"
+
+
+class GoPlusContractDataProvider:
+    """Real contract-security data via the GoPlus Security Token Security API.
+
+    Covers meaningfully more than verification status: whether the owner
+    can arbitrarily change balances, mint new supply, self-destruct the
+    contract, or hide behind a proxy owner - all real findings from
+    GoPlus's static analysis, not inferred. Free and keyless for light
+    use; set ``GOPLUS_API_KEY`` (see ``guardian/config.py``) if you need a
+    higher rate limit.
+
+    Only meaningful for contracts GoPlus has actually analyzed (mainly
+    token contracts) - a generic dApp/router contract will come back with
+    no data, which this reports honestly rather than guessing.
+    """
+
+    name = "goplus"
+
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key
+
+    def get_profile(self, address: str, chain: str) -> ContractProfile:
+        from guardian.intelligence.goplus_client import get_token_security
+
+        data = get_token_security(chain, address, api_key=self.api_key)
+        if data is None:
+            return ContractProfile(address=address, is_verified=None, is_upgradeable=None, data_source="goplus")
+
+        is_verified = _bool_field(data, "is_open_source")
+        is_upgradeable = _bool_field(data, "is_proxy")
+
+        return ContractProfile(
+            address=address,
+            is_verified=is_verified,
+            is_upgradeable=is_upgradeable,
+            data_source="goplus",
+            owner_can_change_balance=_bool_field(data, "owner_change_balance"),
+            is_mintable=_bool_field(data, "is_mintable"),
+            has_selfdestruct=_bool_field(data, "selfdestruct"),
+            has_hidden_owner=_bool_field(data, "hidden_owner"),
         )

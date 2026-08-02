@@ -69,6 +69,7 @@ class GuardianConfig:
     provider_timeout_seconds: float = field(
         default_factory=lambda: float(os.environ.get("GUARDIAN_PROVIDER_TIMEOUT_SECONDS", "5"))
     )
+    goplus_api_key: Optional[str] = field(default_factory=lambda: os.environ.get("GOPLUS_API_KEY") or None)
 
     # --- Storage ---
     storage_backend: str = field(default_factory=lambda: os.environ.get("GUARDIAN_STORAGE_BACKEND", "memory"))
