@@ -19,6 +19,17 @@ import os
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
+from dotenv import load_dotenv
+
+# Loads a .env file from the current working directory (or the nearest
+# parent that has one) into the real process environment, if present.
+# Silently does nothing if there is no .env file - so this is safe to run
+# unconditionally, including in production where config comes from the
+# process manager / container orchestrator instead. Must run before any
+# GuardianConfig field is read, which is why this sits at module import
+# time rather than inside a function.
+load_dotenv()
+
 TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
