@@ -97,7 +97,7 @@ guardian/
         wallet/           analyzer.py + providers.py (mock | RpcWalletDataProvider)
         token/            analyzer.py + providers.py (mock | DexScreenerTokenDataProvider | GoPlusTokenDataProvider)
         contract/         analyzer.py + providers.py (mock | BlockscoutContractDataProvider | GoPlusContractDataProvider)
-        simulation/       pre-execution dry-run (mock | real eth_call when calldata is supplied)
+        simulation/       pre-execution dry-run (mock | real eth_call) + tx_builder.py (real calldata for transfer/approve)
         goplus_client.py  shared GoPlus Token Security API client (used by both contract + token)
         threat/           blocklist.py (local AddressList) + intelligence.py
     policy/             PolicyEngine + policy templates (spending caps, reputation gates)
@@ -111,7 +111,7 @@ mcp_server.py           MCP stdio server - same DecisionEngine, no HTTP required
 data/threat_lists/      local, operator-maintained allow/deny lists (empty by default - see its README)
 scripts/
     refresh_ofac_list.py   fetch OFAC's public SDN list into the local threat list
-tests/                  87 tests covering the engine, policy, reputation, and every provider
+tests/                  100 tests covering the engine, policy, reputation, and every provider
 ```
 
 `guardian/*` is intentionally dependency-free (standard library only,
@@ -175,14 +175,24 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   (`GUARDIAN_SIMULATION_PROVIDER=rpc`) genuinely dry-runs a transaction via
   `eth_call`/`eth_estimateGas` against current chain state - a revert comes
   back with its actual reason, not a guess, and ERC-20 `approve()` amounts
-  are decoded from real calldata instead of inferred. The catch: this only
-  activates when the caller supplies raw calldata via
-  `intent.metadata["data"]`. A high-level intent like "swap 5 ETH for
-  USDC" with no transaction built yet has nothing to dry-run - Guardian
-  reports that honestly (`simulation_not_attempted`) rather than guessing,
-  and falls back to the same weaker heuristic as before. Building an
-  actual transaction from a semantic intent (resolving a DEX route, token
-  addresses, etc.) is a separate, much larger problem this doesn't solve.
+  are decoded from real calldata instead of inferred. This activates when
+  the caller supplies raw calldata via `intent.metadata["data"]`, OR - new -
+  when `GUARDIAN_TX_BUILDER=rpc` is also set and the intent is a plain
+  `transfer` or `approve` (see next bullet). A `swap` intent with no
+  transaction built yet still has nothing to dry-run - Guardian reports
+  that honestly (`simulation_not_attempted`) rather than guessing.
+- **Transaction building closes part of that gap, deliberately not all
+  of it.** `RpcTransactionBuilder` (`GUARDIAN_TX_BUILDER=rpc`) turns a
+  semantic `transfer`/`approve` intent into real calldata - it fetches the
+  token's actual `decimals()` via RPC rather than assuming 18 (a wrong
+  assumption there would scale the amount by orders of magnitude), and
+  deliberately has no hardcoded token-address registry: a bare symbol like
+  "USDC" is refused rather than guessed at, since a wrong address here
+  wouldn't just be a bad risk signal, it'd be an artifact that could end up
+  in a real transaction. `swap` and `bridge` are NOT built - that needs
+  real DEX/bridge routing (liquidity sourcing, price impact, slippage),
+  a categorically bigger problem than encoding one well-known function
+  call, and still genuinely open.
 - **Storage:** `InMemoryStorage` (default, zero setup) or `SQLiteStorage`
   (`GUARDIAN_STORAGE_BACKEND=sqlite` - persists across restarts, no
   external infra). Neither is a fit for many replicas writing
@@ -295,12 +305,13 @@ against Python 3.11 and 3.12.
 1. ~~Replace the mock wallet/token/contract analyzers with real data
    sources.~~ Done - see [Honesty about the current state](#honesty-about-the-current-state)
    for what "real" does and doesn't cover yet per source.
-2. ~~Wire up real pre-execution simulation.~~ Done for the case where
-   the caller supplies built transaction calldata
-   (`GUARDIAN_SIMULATION_PROVIDER=rpc`) - see
-   [Honesty about the current state](#honesty-about-the-current-state)
-   for the real limit (no calldata yet = nothing to dry-run). Building a
-   transaction from a semantic intent (DEX routing, etc.) is still open.
+2. ~~Wire up real pre-execution simulation.~~ Done for `transfer`/
+   `approve` end to end (`GUARDIAN_SIMULATION_PROVIDER=rpc` +
+   `GUARDIAN_TX_BUILDER=rpc` - see
+   [Honesty about the current state](#honesty-about-the-current-state)).
+   `swap`/`bridge` still need real DEX/bridge routing to build a
+   transaction from a semantic intent - a categorically bigger problem,
+   still open.
 3. ~~Populate threat-intel / sanctions feeds; stop shipping empty
    sets.~~ Done for sanctions (`sanctioned_addresses.json` - 103 real OFAC
    SDN addresses, refreshable via `scripts/refresh_ofac_list.py`).

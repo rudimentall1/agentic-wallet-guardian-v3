@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from dataclasses import replace as dataclasses_replace
+
 from guardian.config import GuardianConfig, get_config
 from guardian.core.context import EvaluationContext
 from guardian.core.intent import ActionIntent
@@ -27,6 +29,7 @@ from guardian.decision.rules import evaluate_hard_rules
 from guardian.decision.scoring import RiskFusionEngine
 from guardian.intelligence.contract.analyzer import ContractAnalyzer, build_contract_provider
 from guardian.intelligence.simulation.engine import SimulationEngine, build_simulation_provider
+from guardian.intelligence.simulation.tx_builder import build_transaction_builder
 from guardian.intelligence.threat.blocklist import AddressList
 from guardian.intelligence.threat.intelligence import ThreatIntelligence
 from guardian.intelligence.token.analyzer import TokenAnalyzer, build_token_provider
@@ -72,6 +75,7 @@ class DecisionEngine:
             known_malicious=AddressList(config.malicious_contracts_path),
         )
         self.simulation_engine = simulation_engine or SimulationEngine(build_simulation_provider(config))
+        self.tx_builder = build_transaction_builder(config)
         self.threat_intel = ThreatIntelligence(AddressList(config.sanctioned_addresses_path))
         self.risk_fusion = RiskFusionEngine()
         self.policy_engine = policy_engine or PolicyEngine()
@@ -99,7 +103,19 @@ class DecisionEngine:
             ctx.add_signal(s)
         for s in self.contract_analyzer.analyze(intent.target, intent.chain):
             ctx.add_signal(s)
-        for s in self.simulation_engine.simulate(intent):
+
+        # If the caller didn't already supply real calldata, try building it
+        # for the simple cases (transfer/approve) where that's unambiguous -
+        # see tx_builder.py for exactly what this does and doesn't cover.
+        # Never mutates the caller's own intent object.
+        sim_intent = intent
+        if "data" not in intent.metadata:
+            built = self.tx_builder.build(intent)
+            if built is not None:
+                sim_intent = dataclasses_replace(
+                    intent, metadata={**intent.metadata, "data": built.data, "value": built.value},
+                )
+        for s in self.simulation_engine.simulate(sim_intent):
             ctx.add_signal(s)
         for s in self.threat_intel.check(intent.wallet, intent.target):
             ctx.add_signal(s)
