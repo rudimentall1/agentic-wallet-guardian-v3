@@ -16,6 +16,12 @@ class TestDecisionEngine(unittest.TestCase):
         self.assertEqual(decision.decision, DecisionType.BLOCK)
         self.assertTrue(any(v.rule == "unsupported_chain" for v in decision.policy_violations))
 
+    def test_botchain_is_a_supported_chain(self):
+        intent = ActionIntent(agent_id="a1", wallet="0xabc", chain="botchain",
+                               action_type="transfer", target="0xdef", amount=1)
+        decision = self.engine.evaluate(intent)
+        self.assertFalse(any(v.rule == "unsupported_chain" for v in decision.policy_violations))
+
     def test_unknown_agent_large_amount_is_blocked_by_policy(self):
         intent = ActionIntent(agent_id="brand-new-agent",
                                wallet="0x000000000000000000000000000000000000aa",

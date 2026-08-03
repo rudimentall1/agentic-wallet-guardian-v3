@@ -111,7 +111,7 @@ mcp_server.py           MCP stdio server - same DecisionEngine, no HTTP required
 data/threat_lists/      local, operator-maintained allow/deny lists (empty by default - see its README)
 scripts/
     refresh_ofac_list.py   fetch OFAC's public SDN list into the local threat list
-tests/                  100 tests covering the engine, policy, reputation, and every provider
+tests/                  101 tests covering the engine, policy, reputation, and every provider
 ```
 
 `guardian/*` is intentionally dependency-free (standard library only,
