@@ -330,6 +330,20 @@ against Python 3.11 and 3.12.
 
 ---
 
+## Related projects
+
+Same author, same principle applied elsewhere:
+
+- [agent-guardrail](https://github.com/rudimentall1/agent-guardrail) -
+  a generic policy firewall for AI agent tool calls (not
+  blockchain-specific). Published on PyPI, MIT, 46 tests.
+- [x402-attest](https://github.com/rudimentall1/x402-attest) -
+  cryptographically signed (Ed25519), independently verifiable
+  attestations for agent-to-agent payment policy decisions. Early
+  proof of concept.
+
+---
+
 ## License
 
 MIT - see `LICENSE`.
