@@ -341,6 +341,10 @@ Same author, same principle applied elsewhere:
   cryptographically signed (Ed25519), independently verifiable
   attestations for agent-to-agent payment policy decisions. Early
   proof of concept.
+- [open-agent-attestation](https://github.com/rudimentall1/open-agent-attestation) -
+  vendor-neutral open spec (JWT+EdDSA) for signing agent policy
+  decisions, verifiable by anyone. x402-attest above uses a custom
+  format; this is the generalized version. Draft v0.1.
 
 ---
 
