@@ -56,21 +56,21 @@ policy customization - not a strict upgrade over every hosted option.
      target, amount, metadata }
                     |
                     v
-        ┌─────────────────────────┐
-        │   Guardian Decision      │
-        │        Engine             │
-        ├───────────────────────────┤
-        │  1. Hard Rules             │  <- chain support, sanity checks
-        │  2. Wallet Intelligence     │  <- mock | real RPC (web3.py)
-        │  3. Token Intelligence       │  <- mock | real DexScreener | real GoPlus
-        │  4. Contract Intelligence     │  <- local lists, then mock | real Blockscout | real GoPlus
-        │  5. Simulation                 │  <- mock | real eth_call dry-run (see below)
-        │  6. Threat Intelligence          │  <- local JSON allow/deny lists
-        │  7. Policy Engine                 │  <- spending caps, reputation gates
-        │  8. Risk Fusion                    │  <- signals -> single 0-100 score
-        │  9. Reputation Adjustment            │
-        │ 10. Explanation                       │  <- evidence -> human-readable reasons
-        └───────────────────────────────────────┘
+        РІвЂќРЉРІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќС’
+        РІвЂќвЂљ   Guardian Decision      РІвЂќвЂљ
+        РІвЂќвЂљ        Engine             РІвЂќвЂљ
+        РІвЂќСљРІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќВ¤
+        РІвЂќвЂљ  1. Hard Rules             РІвЂќвЂљ  <- chain support, sanity checks
+        РІвЂќвЂљ  2. Wallet Intelligence     РІвЂќвЂљ  <- mock | real RPC (web3.py)
+        РІвЂќвЂљ  3. Token Intelligence       РІвЂќвЂљ  <- mock | real DexScreener | real GoPlus
+        РІвЂќвЂљ  4. Contract Intelligence     РІвЂќвЂљ  <- local lists, then mock | real Blockscout | real GoPlus
+        РІвЂќвЂљ  5. Simulation                 РІвЂќвЂљ  <- mock | real eth_call dry-run (see below)
+        РІвЂќвЂљ  6. Threat Intelligence          РІвЂќвЂљ  <- local JSON allow/deny lists
+        РІвЂќвЂљ  7. Policy Engine                 РІвЂќвЂљ  <- spending caps, reputation gates
+        РІвЂќвЂљ  8. Risk Fusion                    РІвЂќвЂљ  <- signals -> single 0-100 score
+        РІвЂќвЂљ  9. Reputation Adjustment            РІвЂќвЂљ
+        РІвЂќвЂљ 10. Explanation                       РІвЂќвЂљ  <- evidence -> human-readable reasons
+        РІвЂќвЂќРІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќВ
                     |
                     v
           ALLOW / WARN / BLOCK
@@ -327,6 +327,21 @@ against Python 3.11 and 3.12.
 7. Get the policy engine and risk fusion reviewed/audited before anyone
    relies on a `BLOCK` from this service in production - it's a security
    tool, so it needs the same scrutiny it applies to others.
+8. ~~Add per-agent capability limits (delegation scoping).~~ Done -
+   `guardian/policy/capabilities.py`. Opt-in: an operator can grant a
+   specific agent a scoped capability (allowed action types, allowed
+   chains, per-action and daily spending caps, an expiry) with zero
+   private-key material involved. Agents with no grant are unaffected -
+   see `examples/example_capability_limits.py`. Real key management
+   (session keys, account abstraction) remains deliberately out of
+   scope - a categorically higher-stakes problem.
+9. ~~Verify declared intent against decoded simulation results.~~ Done
+   for `approve` - `guardian/decision/intent_verification.py` catches
+   the case where an agent declares one amount but the actual calldata
+   it was handed encodes a meaningfully different (but still finite)
+   one. This is distinct from the existing "unlimited approval"
+   signal, which only catches near-uint256-max values - see
+   `examples/example_intent_verification.py`.
 
 ---
 
