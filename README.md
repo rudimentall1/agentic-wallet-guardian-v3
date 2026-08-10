@@ -1,5 +1,6 @@
 <!-- mcp-name: io.github.rudimentall1/agentic-wallet-guardian-v3 -->
 # Agentic Wallet Guardian
+[![agentic-wallet-guardian-v3 MCP server](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3/badges/score.svg)](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3)
 
 **A self-hosted decision engine that sits between an AI agent and blockchain
 execution.** Agents submit a proposed action, Guardian returns an
