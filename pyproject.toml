@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-wallet-guardian-mcp"
+version = "3.1.0"
+description = "Decision infrastructure for autonomous AI agents: evaluates a proposed blockchain action intent and returns an explainable ALLOW/WARN/BLOCK decision before execution, signed as a verifiable OAA token."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [
+    { name = "rudimentall1" },
+]
+keywords = ["mcp", "ai-agents", "web3", "wallet-security", "policy-engine", "oaa"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "mcp==2.0.0",
+    "cryptography>=42.0",
+    "python-dotenv>=1.0.1",
+    "PyJWT>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rudimentall1/agentic-wallet-guardian-v3"
+Repository = "https://github.com/rudimentall1/agentic-wallet-guardian-v3"
+Issues = "https://github.com/rudimentall1/agentic-wallet-guardian-v3/issues"
+
+[project.scripts]
+guardian-mcp-server = "mcp_server:main"
+
+[tool.setuptools]
+py-modules = ["mcp_server"]
+
+[tool.setuptools.packages.find]
+include = ["guardian*"]

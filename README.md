@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.rudimentall1/agentic-wallet-guardian-v3 -->
 # Agentic Wallet Guardian
 
 **A self-hosted decision engine that sits between an AI agent and blockchain
