@@ -1,0 +1,16 @@
+{
+  "name": "agentic-wallet-guardian",
+  "description": "Self-hosted decision engine that sits between an AI agent and blockchain execution. Agents submit a proposed action, Guardian returns an explainable ALLOW / WARN / BLOCK before anything gets signed or broadcast.",
+  "repository": "https://github.com/rudimentall1/agentic-wallet-guardian-v3",
+  "runtime": "python",
+  "entrypoint": "mcp_server.py",
+  "license": "MIT",
+  "tags": [
+    "mcp",
+    "ai-agents",
+    "security",
+    "blockchain",
+    "web3",
+    "guardrails"
+  ]
+}
