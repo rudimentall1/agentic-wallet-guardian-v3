@@ -302,6 +302,31 @@ against Python 3.11 and 3.12.
 
 ---
 
+## Signed, verifiable decisions (OAA)
+
+Every decision this service returns — from a single policy check up
+through the full pipeline — is signed as an [OAA (Open Agent
+Attestation)](https://github.com/rudimentall1/open-agent-attestation)
+token: an Ed25519-signed JWT wrapping the decision, the action, and
+the reason.
+
+Anyone holding the public key can verify a decision offline, without
+calling back to whatever instance of Guardian issued it — useful for
+an auditor, a downstream service, or just a record you want to trust
+later without trusting the server that produced it.
+
+```bash
+python examples/example_oaa_attestation.py
+python examples/example_full_pipeline.py   # capability -> intent -> engine -> OAA
+```
+
+The reference OAA implementation is ~150 lines
+(`oaa.py`/`attestation.py` upstream) and is shared, unmodified,
+across this project and [agent-guardrail](https://github.com/rudimentall1/agent-guardrail) —
+same signing format, same verification path, no per-project fork.
+
+---
+
 ## Roadmap
 
 1. ~~Replace the mock wallet/token/contract analyzers with real data
