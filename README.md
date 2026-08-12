@@ -58,21 +58,21 @@ policy customization - not a strict upgrade over every hosted option.
      target, amount, metadata }
                     |
                     v
-        РІвЂќРЉРІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќС’
-        РІвЂќвЂљ   Guardian Decision      РІвЂќвЂљ
-        РІвЂќвЂљ        Engine             РІвЂќвЂљ
-        РІвЂќСљРІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќВ¤
-        РІвЂќвЂљ  1. Hard Rules             РІвЂќвЂљ  <- chain support, sanity checks
-        РІвЂќвЂљ  2. Wallet Intelligence     РІвЂќвЂљ  <- mock | real RPC (web3.py)
-        РІвЂќвЂљ  3. Token Intelligence       РІвЂќвЂљ  <- mock | real DexScreener | real GoPlus
-        РІвЂќвЂљ  4. Contract Intelligence     РІвЂќвЂљ  <- local lists, then mock | real Blockscout | real GoPlus
-        РІвЂќвЂљ  5. Simulation                 РІвЂќвЂљ  <- mock | real eth_call dry-run (see below)
-        РІвЂќвЂљ  6. Threat Intelligence          РІвЂќвЂљ  <- local JSON allow/deny lists
-        РІвЂќвЂљ  7. Policy Engine                 РІвЂќвЂљ  <- spending caps, reputation gates
-        РІвЂќвЂљ  8. Risk Fusion                    РІвЂќвЂљ  <- signals -> single 0-100 score
-        РІвЂќвЂљ  9. Reputation Adjustment            РІвЂќвЂљ
-        РІвЂќвЂљ 10. Explanation                       РІвЂќвЂљ  <- evidence -> human-readable reasons
-        РІвЂќвЂќРІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќВ
+        ┌───────────────────────────────┐
+        │   Guardian Decision Engine    │
+        ├───────────────────────────────┤
+        │  1. Hard Rules                │  <- chain support, sanity checks
+        │  2. Wallet Intelligence       │  <- mock | real RPC (web3.py)
+        │  3. Token Intelligence        │  <- mock | real DexScreener | real GoPlus
+        │  4. Contract Intelligence     │  <- local lists, then mock | real Blockscout | real GoPlus
+        │  5. Simulation                │  <- mock | real eth_call dry-run (see below)
+        │  6. Threat Intelligence       │  <- local JSON allow/deny lists
+        │  7. Anomaly Detection         │  <- vs. this agent's own history (see below)
+        │  8. Policy Engine             │  <- spending caps, reputation gates
+        │  9. Risk Fusion               │  <- signals -> single 0-100 score
+        │ 10. Reputation Adjustment     │
+        │ 11. Explanation               │  <- evidence -> human-readable reasons
+        └───────────────────────────────┘
                     |
                     v
           ALLOW / WARN / BLOCK
@@ -369,6 +369,16 @@ same signing format, same verification path, no per-project fork.
    one. This is distinct from the existing "unlimited approval"
    signal, which only catches near-uint256-max values - see
    `examples/example_intent_verification.py`.
+10. ~~Flag actions that deviate from an agent's own historical
+    pattern.~~ Done - `guardian/intelligence/anomaly/analyzer.py`.
+    Distinct from reputation (a single trust score) and policy (static,
+    operator-set limits): this compares the current intent against
+    *this specific agent's* own recorded history - new action type,
+    new chain, or an amount that's a statistical outlier versus what
+    this agent has done before, even if it's within policy limits and
+    the agent's reputation is fine. Honestly reports "insufficient
+    history" rather than guessing a baseline from fewer than 5 prior
+    data points - see `tests/test_anomaly_detection.py`.
 
 ---
 

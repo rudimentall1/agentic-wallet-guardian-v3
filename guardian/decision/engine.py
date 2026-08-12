@@ -27,6 +27,7 @@ from guardian.core.intent import ActionIntent
 from guardian.core.models import Decision, DecisionType, PolicyViolation
 from guardian.decision.rules import evaluate_hard_rules
 from guardian.decision.scoring import RiskFusionEngine
+from guardian.intelligence.anomaly.analyzer import AnomalyAnalyzer
 from guardian.intelligence.contract.analyzer import ContractAnalyzer, build_contract_provider
 from guardian.intelligence.simulation.engine import SimulationEngine, build_simulation_provider
 from guardian.intelligence.simulation.tx_builder import build_transaction_builder
@@ -65,6 +66,7 @@ class DecisionEngine:
         token_analyzer: Optional[TokenAnalyzer] = None,
         contract_analyzer: Optional[ContractAnalyzer] = None,
         simulation_engine: Optional[SimulationEngine] = None,
+        anomaly_analyzer: Optional[AnomalyAnalyzer] = None,
     ):
         config = config or get_config()
         self.wallet_analyzer = wallet_analyzer or WalletAnalyzer(build_wallet_provider(config))
@@ -81,6 +83,7 @@ class DecisionEngine:
         self.policy_engine = policy_engine or PolicyEngine()
         self.history = history or DecisionHistory(build_storage_backend(config))
         self.reputation = AgentReputation(self.history)
+        self.anomaly_analyzer = anomaly_analyzer or AnomalyAnalyzer()
 
     def evaluate(self, intent: ActionIntent) -> Decision:
         # 1. Hard rules can short-circuit straight to BLOCK before we spend
@@ -118,6 +121,13 @@ class DecisionEngine:
         for s in self.simulation_engine.simulate(sim_intent):
             ctx.add_signal(s)
         for s in self.threat_intel.check(intent.wallet, intent.target):
+            ctx.add_signal(s)
+
+        # Anomaly detection compares this intent against the agent's own
+        # past — must run against history *before* this decision is
+        # recorded, which is naturally the case here (recording happens
+        # in _finalize, after this).
+        for s in self.anomaly_analyzer.analyze(intent, self.history.get(intent.agent_id)):
             ctx.add_signal(s)
 
         # 4. Policy evaluation — business rules independent of statistical risk.
@@ -158,5 +168,5 @@ class DecisionEngine:
             agent_id=intent.agent_id,
             intent_id=intent.intent_id,
         )
-        self.history.record(intent.agent_id, decision)
+        self.history.record(intent.agent_id, decision, intent)
         return decision
