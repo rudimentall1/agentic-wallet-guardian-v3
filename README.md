@@ -327,6 +327,39 @@ same signing format, same verification path, no per-project fork.
 
 ---
 
+## Using Guardian in front of MetaMask Agent Wallet
+
+MetaMask Agent Wallet's Guard Mode / Beast Mode apply the same static
+spend limits and allowlists to every agent. Guardian is a second,
+independent check in front of it: does *this* specific action look
+right for *this* agent, right now — before the `mm` CLI is ever
+invoked.
+
+[`skills/guardian-check/`](skills/guardian-check/) is a standard
+[Agent Skill](https://agentskills.io) — the same open format MetaMask
+itself uses for `mm` (`npx skills add MetaMask/agent-skills`). Install
+it alongside MetaMask's own skill in any Agent-Skills-compatible
+runtime (Claude Code, Cursor, Codex, OpenClaw), and the agent will
+call a running Guardian instance for an ALLOW/WARN/BLOCK decision
+before running any `mm` command that moves funds — `mm send`, `mm
+swap`, `mm bridge`, `mm perps`, `mm predict trade`, `mm earn`, `mm
+aave`, `mm pay`.
+
+Guardian never holds keys and never executes anything — `mm` remains
+the only thing that signs or broadcasts. This is a decision gate the
+agent is instructed to consult first, not a modification to
+MetaMask's own pipeline (there's no public hook for that today).
+
+```bash
+uvicorn api.main:app --reload   # run Guardian locally
+export GUARDIAN_API_URL="http://localhost:8000"
+python skills/guardian-check/scripts/check.py \
+  --agent-id my-agent --wallet 0x... --chain ethereum \
+  --action-type transfer --target 0x... --amount 50
+```
+
+---
+
 ## Roadmap
 
 1. ~~Replace the mock wallet/token/contract analyzers with real data
@@ -379,6 +412,17 @@ same signing format, same verification path, no per-project fork.
     the agent's reputation is fine. Honestly reports "insufficient
     history" rather than guessing a baseline from fewer than 5 prior
     data points - see `tests/test_anomaly_detection.py`.
+11. ~~Sit in front of a real agent wallet, not just accept intents
+    from a generic API caller.~~ Done for MetaMask Agent Wallet -
+    `skills/guardian-check/` is a standard Agent Skill an agent
+    installs alongside MetaMask's own `mm` skill; the agent calls it
+    before running any fund-moving `mm` command and only proceeds on
+    ALLOW. Tested end-to-end against a live `uvicorn` instance
+    (ALLOW/WARN/BLOCK/config-error all exercised for real, not just
+    asserted) - see the "Using Guardian in front of MetaMask Agent
+    Wallet" section above. No public hook exists (yet) to run inside
+    MetaMask's own pipeline; this works at the agent-orchestration
+    layer instead.
 
 ---
 
