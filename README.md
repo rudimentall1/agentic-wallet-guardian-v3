@@ -196,10 +196,16 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   locally via `Web3.keccak`, not copied from memory) - real
   `getAmountsOut()` on-chain quote, caller-supplied `max_slippage_bps`
   required (never a default, same reasoning as decimals above). `bridge`
-  is NOT built - there's no single well-known contract the way Uniswap V2
-  is, so building it means picking (and trusting) a specific bridge
-  protocol, a project-specific decision this generic builder shouldn't
-  make for you.
+  is a genuinely open-ended L2/bridge routing problem in general - dozens
+  of protocols, wildly different trust models - but this module handles
+  one well-scoped slice of it: L1 -> L2 deposits through a destination
+  chain's own official OP Stack bridge (currently: Base only -
+  `depositETHTo`/`depositERC20To` on `L1StandardBridge`, address
+  cross-checked against two independent sources before being hardcoded).
+  L2 -> L1 withdrawals are NOT built - that's a genuinely different, much
+  slower proof/challenge-window flow, not a variant of the deposit call.
+  Bridging to anywhere else, or via any non-canonical bridge, returns
+  `None` rather than guessing.
 - **Storage:** `InMemoryStorage` (default, zero setup) or `SQLiteStorage`
   (`GUARDIAN_STORAGE_BACKEND=sqlite` - persists across restarts, no
   external infra). Neither is a fit for many replicas writing
@@ -384,7 +390,11 @@ python skills/guardian-check/scripts/check.py \
    "succeeded" against any EOA recipient regardless of whether the real
    call would have reverted. `BuiltTransaction` now carries an explicit
    `to`; see `tests/test_tx_builder.py` for the regression tests that
-   would have caught it. `bridge` is still open - see above.
+   would have caught it. ~~`bridge` still open.~~ Done for L1->L2
+   deposits to Base via the official OP Stack `L1StandardBridge`
+   (`depositETHTo`/`depositERC20To`) - other destinations, other bridge
+   protocols, and L2->L1 withdrawals all remain open; see
+   [Honesty about the current state](#honesty-about-the-current-state).
 3. ~~Populate threat-intel / sanctions feeds; stop shipping empty
    sets.~~ Done for sanctions (`sanctioned_addresses.json` - 103 real OFAC
    SDN addresses, refreshable via `scripts/refresh_ofac_list.py`).

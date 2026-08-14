@@ -15,11 +15,16 @@ assumed (most tokens use 18, but not all: USDC/USDT-style tokens commonly
 use 6, and getting this wrong would scale the amount incorrectly by
 orders of magnitude).
 
-``bridge`` is NOT handled here - cross-chain bridging has no single
-well-known, immutable contract the way Uniswap V2 does; building it
-correctly means picking (and trusting) a specific bridge protocol, which
-is a project-specific decision this generic builder shouldn't make for
-you.
+``bridge`` is handled for L1 -> L2 deposits only, and only to
+destinations in ``BRIDGE_CONTRACTS`` (currently: Base) - official OP Stack
+canonical bridges, one immutable contract per destination, same
+"unambiguous well-known target" property as the Uniswap V2 router above.
+L2 -> L1 withdrawals are NOT handled - that's a genuinely different,
+much slower two-step proof/challenge-window flow, not a variant of the
+same deposit call. Bridging to any other chain, or any bridge protocol
+other than a chain's own official OP Stack bridge, returns ``None``
+rather than guessing at a contract this module hasn't specifically
+verified.
 
 ``swap`` is handled, but only against Uniswap V2 Router02 - the most
 widely deployed, unmodified-since-launch router contract, so its
@@ -55,6 +60,25 @@ UNLIMITED_APPROVAL = 2**256 - 1
 # rather than trust them blindly.
 SWAP_EXACT_TOKENS_SELECTOR = "38ed1739"  # swapExactTokensForTokens(uint256,uint256,address[],address,uint256)
 GET_AMOUNTS_OUT_SELECTOR = "d06ca61f"  # getAmountsOut(uint256,address[])
+
+# depositETHTo/depositERC20To on the OP Stack L1StandardBridge - source read
+# directly from ethereum-optimism/optimism (develop branch,
+# packages/contracts-bedrock/src/L1/L1StandardBridge.sol) to compute these,
+# not copied from a third-party snippet.
+DEPOSIT_ETH_TO_SELECTOR = "9a2ac6d5"  # depositETHTo(address,uint32,bytes)
+DEPOSIT_ERC20_TO_SELECTOR = "838b2520"  # depositERC20To(address,address,address,uint256,uint32,bytes)
+
+# L1StandardBridge on Ethereum mainnet, keyed by DESTINATION chain (this is
+# an L1 contract - the deposit transaction itself always executes on
+# Ethereum). Cross-checked against two independent sources (Etherscan's
+# label for the contract, and basehub.org's canonical Base contract-address
+# reference) before being hardcoded here. Only "base" is supported today -
+# adding another destination means adding its own verified bridge address,
+# not assuming this one generalizes.
+BRIDGE_CONTRACTS: Dict[str, str] = {
+    "base": "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",
+}
+DEFAULT_BRIDGE_MIN_GAS_LIMIT = 200_000  # a timing/gas knob, not value-affecting - same reasoning as swap's deadline default
 
 # Uniswap V2 Router02 - unmodified since deployment, same address across
 # every chain it's deployed to (CREATE2 + identical bytecode/deployer).
@@ -118,6 +142,15 @@ def _encode_address_array(addresses) -> str:
     return length + body
 
 
+def _encode_bytes_param(data: bytes) -> str:
+    """ABI-encodes a dynamic `bytes` tail: length word, then the data
+    right-padded to a 32-byte boundary."""
+    length = _encode_uint256(len(data))
+    hex_data = data.hex()
+    padded_len = ((len(data) + 31) // 32) * 32 * 2  # hex chars, padded to 32-byte multiple
+    return length + hex_data.ljust(padded_len, "0")
+
+
 class RpcTransactionBuilder:
     """Builds real calldata for ``transfer``/``approve`` intents via RPC.
 
@@ -158,6 +191,8 @@ class RpcTransactionBuilder:
     def build(self, intent: ActionIntent) -> Optional[BuiltTransaction]:
         if intent.action_type == "swap":
             return self._build_swap(intent)
+        if intent.action_type == "bridge":
+            return self._build_bridge(intent)
 
         if intent.action_type not in ("transfer", "approve"):
             return None
@@ -294,6 +329,82 @@ class RpcTransactionBuilder:
                 f"({amount_out} atomic units out), {max_slippage_bps}bps max slippage -> "
                 f"minAmountOut={min_amount_out}"
             ),
+        )
+
+    def _build_bridge(self, intent: ActionIntent) -> Optional[BuiltTransaction]:
+        """L1 -> L2 deposit via an OP Stack L1StandardBridge - see
+        BRIDGE_CONTRACTS for which destinations are supported. This is a
+        deposit only: no withdrawal (L2 -> L1) support, which needs a
+        completely different, much slower two-step proof/challenge flow
+        this module doesn't attempt to model.
+        """
+        destination = intent.metadata.get("destination_chain")
+        bridge = BRIDGE_CONTRACTS.get(destination) if destination else None
+        if bridge is None:
+            logger.info("No known canonical bridge to destination '%s' - not guessing one", destination)
+            return None
+        if intent.amount is None:
+            return None
+
+        recipient = intent.metadata.get("recipient", intent.wallet)
+        if not _looks_like_address(recipient):
+            return None
+
+        min_gas_limit = intent.metadata.get("min_gas_limit", DEFAULT_BRIDGE_MIN_GAS_LIMIT)
+        extra_data = intent.metadata.get("extra_data", b"")
+        if isinstance(extra_data, str):
+            extra_data = bytes.fromhex(extra_data[2:] if extra_data.startswith("0x") else extra_data)
+
+        if intent.from_token is None:
+            # Native ETH deposit.
+            value = int(intent.amount * 10**18)
+            head = (
+                _encode_address_param(recipient)
+                + _encode_uint256(min_gas_limit)
+                + _encode_uint256(0x60)  # offset to extraData tail: 3 head words * 32 = 96 = 0x60
+            )
+            tail = _encode_bytes_param(extra_data)
+            data = f"0x{DEPOSIT_ETH_TO_SELECTOR}{head}{tail}"
+            return BuiltTransaction(
+                data=data, value=value, to=bridge,
+                reason=f"depositETHTo() on the canonical {destination} bridge, minGasLimit={min_gas_limit}",
+            )
+
+        # ERC-20 deposit - the L2-side token address can't be derived or
+        # guessed from the L1 address; a wrong one here means tokens
+        # minted to (or expected at) the wrong L2 contract entirely, not
+        # just a bad risk signal. Same "refuse rather than guess" rule as
+        # decimals and slippage elsewhere in this module.
+        l2_token = intent.metadata.get("l2_token")
+        if not _looks_like_address(l2_token):
+            logger.warning("bridge intent for an ERC-20 has no metadata['l2_token'] - refusing to guess the L2-side token contract")
+            return None
+        if not _looks_like_address(intent.from_token):
+            return None
+
+        try:
+            w3 = self._client(intent.chain)
+        except Exception:
+            logger.warning("Transaction builder setup failed for intent %s", intent.intent_id, exc_info=True)
+            return None
+        decimals = self._fetch_decimals(w3, intent.from_token)
+        if decimals is None:
+            return None
+        amount_units = int(intent.amount * 10**decimals)
+
+        head = (
+            _encode_address_param(intent.from_token)
+            + _encode_address_param(l2_token)
+            + _encode_address_param(recipient)
+            + _encode_uint256(amount_units)
+            + _encode_uint256(min_gas_limit)
+            + _encode_uint256(0xC0)  # offset to extraData tail: 6 head words * 32 = 192 = 0xc0
+        )
+        tail = _encode_bytes_param(extra_data)
+        data = f"0x{DEPOSIT_ERC20_TO_SELECTOR}{head}{tail}"
+        return BuiltTransaction(
+            data=data, value=0, to=bridge,
+            reason=f"depositERC20To() on the canonical {destination} bridge, minGasLimit={min_gas_limit}",
         )
 
 

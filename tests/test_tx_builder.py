@@ -5,6 +5,8 @@ from guardian.core.intent import ActionIntent
 from guardian.decision.engine import DecisionEngine
 from guardian.intelligence.simulation.tx_builder import (
     APPROVE_SELECTOR,
+    DEPOSIT_ERC20_TO_SELECTOR,
+    DEPOSIT_ETH_TO_SELECTOR,
     RpcTransactionBuilder,
     SWAP_EXACT_TOKENS_SELECTOR,
     TRANSFER_SELECTOR,
@@ -85,10 +87,10 @@ class TestRpcTransactionBuilderTransfer(unittest.TestCase):
             result = builder.build(intent)
         self.assertIsNone(result)
 
-    def test_non_transfer_approve_swap_action_types_are_ignored(self):
+    def test_non_transfer_approve_swap_bridge_action_types_are_ignored(self):
         builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
         intent = ActionIntent(agent_id="a", wallet="0xabc", chain="ethereum",
-                               action_type="bridge", target=RECIPIENT, from_token=TOKEN_ADDRESS, amount=100)
+                               action_type="contract_call", target=RECIPIENT, from_token=TOKEN_ADDRESS, amount=100)
         with patch.object(builder, "_client") as mock_client:
             result = builder.build(intent)
         mock_client.assert_not_called()
@@ -390,6 +392,96 @@ class TestRpcTransactionBuilderSwap(unittest.TestCase):
             result = builder.build(intent)
 
         self.assertEqual(result.to, self.ROUTER)
+
+
+class TestRpcTransactionBuilderBridge(unittest.TestCase):
+    BASE_BRIDGE = "0x3154Cf16ccdb4C6d922629664174b904d80F2C35"
+
+    def test_native_eth_bridge_happy_path(self):
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        intent = ActionIntent(
+            agent_id="a", wallet="0x" + "9" * 40, chain="ethereum", action_type="bridge",
+            amount=1, metadata={"destination_chain": "base"},
+        )
+        result = builder.build(intent)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.to, self.BASE_BRIDGE)
+        self.assertTrue(result.data.startswith(f"0x{DEPOSIT_ETH_TO_SELECTOR}"))
+        self.assertEqual(result.value, 10**18)
+
+    def test_native_eth_bridge_recipient_defaults_to_wallet(self):
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        wallet = "0x" + "7" * 40
+        intent = ActionIntent(
+            agent_id="a", wallet=wallet, chain="ethereum", action_type="bridge",
+            amount=1, metadata={"destination_chain": "base"},
+        )
+        result = builder.build(intent)
+        head = result.data[2 + 8:2 + 8 + 3 * 64]
+        self.assertEqual(head[:64], _encode_address_param(wallet))
+
+    def test_unknown_destination_not_guessed(self):
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        intent = ActionIntent(
+            agent_id="a", wallet="0xabc", chain="ethereum", action_type="bridge",
+            amount=1, metadata={"destination_chain": "some-other-l2"},
+        )
+        result = builder.build(intent)
+        self.assertIsNone(result)
+
+    def test_missing_destination_returns_none(self):
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        intent = ActionIntent(
+            agent_id="a", wallet="0xabc", chain="ethereum", action_type="bridge",
+            amount=1, metadata={},
+        )
+        result = builder.build(intent)
+        self.assertIsNone(result)
+
+    def test_erc20_bridge_without_l2_token_refuses_to_guess(self):
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        intent = ActionIntent(
+            agent_id="a", wallet="0xabc", chain="ethereum", action_type="bridge",
+            from_token=TOKEN_ADDRESS, amount=100, metadata={"destination_chain": "base"},
+        )
+        with patch.object(builder, "_client") as mock_client:
+            result = builder.build(intent)
+        mock_client.assert_not_called()
+        self.assertIsNone(result)
+
+    def test_erc20_bridge_happy_path(self):
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        fake_w3 = MagicMock()
+        fake_w3.to_checksum_address.side_effect = lambda a: a
+        fake_w3.eth.call.return_value = _decimals_response(6)  # USDC-like
+        l2_token = "0x" + "5" * 40
+
+        intent = ActionIntent(
+            agent_id="a", wallet="0x" + "9" * 40, chain="ethereum", action_type="bridge",
+            from_token=TOKEN_ADDRESS, amount=100,
+            metadata={"destination_chain": "base", "l2_token": l2_token},
+        )
+        with patch.object(builder, "_client", return_value=fake_w3):
+            result = builder.build(intent)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.to, self.BASE_BRIDGE)
+        self.assertTrue(result.data.startswith(f"0x{DEPOSIT_ERC20_TO_SELECTOR}"))
+        self.assertEqual(result.value, 0)
+        # head: l1Token, l2Token, to, amount, minGasLimit, offset
+        head = result.data[2 + 8:2 + 8 + 6 * 64]
+        self.assertEqual(head[0:64], _encode_address_param(TOKEN_ADDRESS))
+        self.assertEqual(head[64:128], _encode_address_param(l2_token))
+        self.assertEqual(head[192:256], _encode_uint256(100 * 10**6))  # amount in atomic units
+
+    def test_invalid_recipient_rejected(self):
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        intent = ActionIntent(
+            agent_id="a", wallet="0xabc", chain="ethereum", action_type="bridge",
+            amount=1, metadata={"destination_chain": "base", "recipient": "not-an-address"},
+        )
+        result = builder.build(intent)
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":
