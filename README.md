@@ -191,10 +191,15 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   deliberately has no hardcoded token-address registry: a bare symbol like
   "USDC" is refused rather than guessed at, since a wrong address here
   wouldn't just be a bad risk signal, it'd be an artifact that could end up
-  in a real transaction. `swap` and `bridge` are NOT built - that needs
-  real DEX/bridge routing (liquidity sourcing, price impact, slippage),
-  a categorically bigger problem than encoding one well-known function
-  call, and still genuinely open.
+  in a real transaction. `swap` is built against Uniswap V2 Router02 only
+  (one immutable, well-known contract - function selectors computed
+  locally via `Web3.keccak`, not copied from memory) - real
+  `getAmountsOut()` on-chain quote, caller-supplied `max_slippage_bps`
+  required (never a default, same reasoning as decimals above). `bridge`
+  is NOT built - there's no single well-known contract the way Uniswap V2
+  is, so building it means picking (and trusting) a specific bridge
+  protocol, a project-specific decision this generic builder shouldn't
+  make for you.
 - **Storage:** `InMemoryStorage` (default, zero setup) or `SQLiteStorage`
   (`GUARDIAN_STORAGE_BACKEND=sqlite` - persists across restarts, no
   external infra). Neither is a fit for many replicas writing
@@ -369,9 +374,17 @@ python skills/guardian-check/scripts/check.py \
    `approve` end to end (`GUARDIAN_SIMULATION_PROVIDER=rpc` +
    `GUARDIAN_TX_BUILDER=rpc` - see
    [Honesty about the current state](#honesty-about-the-current-state)).
-   `swap`/`bridge` still need real DEX/bridge routing to build a
-   transaction from a semantic intent - a categorically bigger problem,
-   still open.
+   ~~`swap` needs real DEX routing.~~ Done against Uniswap V2 Router02 -
+   real on-chain `getAmountsOut()` quote, explicit caller-supplied
+   `max_slippage_bps` (never defaulted), no calldata built without a real
+   quote. Fixed a real bug found while building this: simulation was
+   dry-running against `intent.target` (the recipient/spender encoded
+   *inside* ERC-20 calldata) instead of the actual contract being called
+   (`from_token`) - meaning transfer/approve simulation silently
+   "succeeded" against any EOA recipient regardless of whether the real
+   call would have reverted. `BuiltTransaction` now carries an explicit
+   `to`; see `tests/test_tx_builder.py` for the regression tests that
+   would have caught it. `bridge` is still open - see above.
 3. ~~Populate threat-intel / sanctions feeds; stop shipping empty
    sets.~~ Done for sanctions (`sanctioned_addresses.json` - 103 real OFAC
    SDN addresses, refreshable via `scripts/refresh_ofac_list.py`).

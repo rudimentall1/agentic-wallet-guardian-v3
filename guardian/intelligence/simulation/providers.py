@@ -104,6 +104,19 @@ class RpcSimulationProvider:
         return w3
 
     def simulate(self, intent: ActionIntent) -> SimulationResult:
+        # `intent.target` here MUST already be the real contract this call
+        # goes "to" - the token contract for an ERC-20 transfer/approve, the
+        # router for a swap, or the recipient for a plain native transfer.
+        # It is NOT necessarily the same as the target the caller
+        # originally supplied (e.g. an ERC-20 recipient/spender, which is
+        # encoded *inside* calldata, not the call's own "to"). DecisionEngine
+        # overwrites target with `BuiltTransaction.to` before calling this
+        # when it built the calldata itself - see engine.py and
+        # tx_builder.py. A caller supplying pre-built calldata directly
+        # (bypassing tx_builder) is responsible for getting this right;
+        # get it wrong and this dry-runs the wrong contract, and - for an
+        # EOA target especially - silently "succeeds" every time instead of
+        # ever catching a real revert.
         calldata = intent.metadata.get("data")
         if not calldata or not intent.target:
             return SimulationResult(attempted=False)

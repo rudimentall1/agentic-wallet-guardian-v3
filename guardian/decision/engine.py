@@ -116,7 +116,9 @@ class DecisionEngine:
             built = self.tx_builder.build(intent)
             if built is not None:
                 sim_intent = dataclasses_replace(
-                    intent, metadata={**intent.metadata, "data": built.data, "value": built.value},
+                    intent,
+                    target=built.to or intent.target,
+                    metadata={**intent.metadata, "data": built.data, "value": built.value},
                 )
         for s in self.simulation_engine.simulate(sim_intent):
             ctx.add_signal(s)
