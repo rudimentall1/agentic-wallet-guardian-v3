@@ -2,6 +2,8 @@
 # Agentic Wallet Guardian
 [![agentic-wallet-guardian-v3 MCP server](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3/badges/card.svg)](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3)
 
+📄 [Read the white paper](docs/whitepaper.pdf)
+
 **A self-hosted decision engine that sits between an AI agent and blockchain
 execution.** Agents submit a proposed action, Guardian returns an
 explainable ALLOW / WARN / BLOCK before anything gets signed or broadcast.
