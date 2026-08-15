@@ -48,6 +48,15 @@ def build_storage_backend(config: GuardianConfig) -> MemoryBackend:
         from guardian.memory.sqlite_storage import SQLiteStorage
 
         return SQLiteStorage(config.sqlite_path)
+    if config.storage_backend == "postgres":
+        from guardian.memory.postgres_storage import PostgresStorage
+
+        if not config.postgres_dsn:
+            raise ValueError(
+                "GUARDIAN_STORAGE_BACKEND=postgres requires GUARDIAN_POSTGRES_DSN "
+                "to be set - refusing to guess a connection string."
+            )
+        return PostgresStorage(config.postgres_dsn)
     return InMemoryStorage()
 
 # Thresholds for translating a fused risk score into a decision, once no

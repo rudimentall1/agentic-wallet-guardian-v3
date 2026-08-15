@@ -86,6 +86,7 @@ class GuardianConfig:
     # --- Storage ---
     storage_backend: str = field(default_factory=lambda: os.environ.get("GUARDIAN_STORAGE_BACKEND", "memory"))
     sqlite_path: str = field(default_factory=lambda: os.environ.get("GUARDIAN_SQLITE_PATH", "data/guardian.db"))
+    postgres_dsn: str = field(default_factory=lambda: os.environ.get("GUARDIAN_POSTGRES_DSN", ""))
 
     # --- Threat / contract lists (local, operator-maintained files) ---
     sanctioned_addresses_path: str = field(

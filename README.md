@@ -208,11 +208,17 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   slower proof/challenge-window flow, not a variant of the deposit call.
   Bridging to anywhere else, or via any non-canonical bridge, returns
   `None` rather than guessing.
-- **Storage:** `InMemoryStorage` (default, zero setup) or `SQLiteStorage`
+- **Storage:** `InMemoryStorage` (default, zero setup), `SQLiteStorage`
   (`GUARDIAN_STORAGE_BACKEND=sqlite` - persists across restarts, no
-  external infra). Neither is a fit for many replicas writing
-  concurrently at high volume; implement `MemoryBackend` against
-  Postgres/Redis for that.
+  external infra), or `PostgresStorage`
+  (`GUARDIAN_STORAGE_BACKEND=postgres` + `GUARDIAN_POSTGRES_DSN` - the
+  fit for multiple replicas behind a load balancer, where SQLite's
+  single-writer model becomes the bottleneck; `pip install -r
+  requirements-postgres.txt`). Tested against a real local Postgres
+  instance, not mocked - see `tests/test_postgres_storage.py`. Redis is
+  still open if you specifically want it; the two-method
+  `MemoryBackend` interface is small enough to implement against
+  anything.
 - **API auth/rate-limiting** are intentionally minimal - built for one
   self-hosted instance behind your own network boundary, not a
   multi-tenant gateway. Put a real API gateway in front if you need that.
@@ -404,8 +410,11 @@ python skills/guardian-check/scripts/check.py \
    design - no single authoritative source exists to seed them the way
    OFAC's list does for sanctions.
 4. ~~Swap `InMemoryStorage` for a persistent backend.~~ `SQLiteStorage` is
-   available; a Postgres/Redis backend is still open for multi-replica
-   deployments.
+   available; ~~a Postgres/Redis backend is still open for multi-replica
+   deployments.~~ `PostgresStorage` done - tested against a real local
+   Postgres instance (`tests/test_postgres_storage.py`), same
+   two-method `MemoryBackend` interface as the other backends. Redis
+   remains open if specifically wanted.
 5. ~~Add an MCP server wrapper.~~ Done (`mcp_server.py`). A packaged
    Python/TypeScript SDK on top of the REST API is still open.
 6. Publish an OpenAPI spec and a hosted demo endpoint.
