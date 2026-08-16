@@ -396,6 +396,7 @@ class TestRpcTransactionBuilderSwap(unittest.TestCase):
 
 class TestRpcTransactionBuilderBridge(unittest.TestCase):
     BASE_BRIDGE = "0x3154Cf16ccdb4C6d922629664174b904d80F2C35"
+    OPTIMISM_BRIDGE = "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1"
 
     def test_native_eth_bridge_happy_path(self):
         builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
@@ -408,6 +409,22 @@ class TestRpcTransactionBuilderBridge(unittest.TestCase):
         self.assertEqual(result.to, self.BASE_BRIDGE)
         self.assertTrue(result.data.startswith(f"0x{DEPOSIT_ETH_TO_SELECTOR}"))
         self.assertEqual(result.value, 10**18)
+
+    def test_native_eth_bridge_to_optimism_happy_path(self):
+        # Same contract code as Base (both OP Stack) - different verified
+        # address, same selector, same encoding. Confirms BRIDGE_CONTRACTS
+        # is genuinely keyed per destination and not accidentally hardcoded
+        # to Base anywhere in the build logic.
+        builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})
+        intent = ActionIntent(
+            agent_id="a", wallet="0x" + "9" * 40, chain="ethereum", action_type="bridge",
+            amount=1, metadata={"destination_chain": "optimism"},
+        )
+        result = builder.build(intent)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.to, self.OPTIMISM_BRIDGE)
+        self.assertNotEqual(result.to, self.BASE_BRIDGE)
+        self.assertTrue(result.data.startswith(f"0x{DEPOSIT_ETH_TO_SELECTOR}"))
 
     def test_native_eth_bridge_recipient_defaults_to_wallet(self):
         builder = RpcTransactionBuilder(rpc_urls={"ethereum": "http://fake"})

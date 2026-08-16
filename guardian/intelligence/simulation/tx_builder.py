@@ -16,9 +16,10 @@ use 6, and getting this wrong would scale the amount incorrectly by
 orders of magnitude).
 
 ``bridge`` is handled for L1 -> L2 deposits only, and only to
-destinations in ``BRIDGE_CONTRACTS`` (currently: Base) - official OP Stack
-canonical bridges, one immutable contract per destination, same
-"unambiguous well-known target" property as the Uniswap V2 router above.
+destinations in ``BRIDGE_CONTRACTS`` (currently: Base, Optimism) -
+official OP Stack canonical bridges, one immutable contract per
+destination, same "unambiguous well-known target" property as the
+Uniswap V2 router above.
 L2 -> L1 withdrawals are NOT handled - that's a genuinely different,
 much slower two-step proof/challenge-window flow, not a variant of the
 same deposit call. Bridging to any other chain, or any bridge protocol
@@ -70,13 +71,17 @@ DEPOSIT_ERC20_TO_SELECTOR = "838b2520"  # depositERC20To(address,address,address
 
 # L1StandardBridge on Ethereum mainnet, keyed by DESTINATION chain (this is
 # an L1 contract - the deposit transaction itself always executes on
-# Ethereum). Cross-checked against two independent sources (Etherscan's
-# label for the contract, and basehub.org's canonical Base contract-address
-# reference) before being hardcoded here. Only "base" is supported today -
-# adding another destination means adding its own verified bridge address,
-# not assuming this one generalizes.
+# Ethereum). Each address cross-checked against two independent sources
+# before being hardcoded here - "base" against Etherscan's label plus
+# basehub.org's canonical Base contract-address reference; "optimism"
+# against the official ethereum-optimism/superchain-registry
+# (L1StandardBridgeProxy for chain 10) plus a second, independent
+# supersim.pages.dev dev-tool config that mirrors real mainnet addresses.
+# Adding another destination means adding its own similarly-verified
+# address, not assuming these two generalize.
 BRIDGE_CONTRACTS: Dict[str, str] = {
     "base": "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",
+    "optimism": "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
 }
 DEFAULT_BRIDGE_MIN_GAS_LIMIT = 200_000  # a timing/gas knob, not value-affecting - same reasoning as swap's deadline default
 
