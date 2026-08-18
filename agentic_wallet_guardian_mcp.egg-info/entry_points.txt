@@ -1,2 +1,0 @@
-[console_scripts]
-guardian-mcp-server = mcp_server:main

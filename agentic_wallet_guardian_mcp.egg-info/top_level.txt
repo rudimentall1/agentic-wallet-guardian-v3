@@ -1,2 +1,0 @@
-guardian
-mcp_server

@@ -36,3 +36,8 @@ wallets/
 # Local data (self-hosted instance state)
 data/*.db
 data/*.db-*
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
