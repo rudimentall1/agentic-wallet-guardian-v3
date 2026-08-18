@@ -79,6 +79,20 @@ class TestPostgresStorage(unittest.TestCase):
         # Prevent tearDown from double-closing the already-closed self.store.
         self.store = store2
 
+    def test_limit_returns_most_recent_n_in_chronological_order(self):
+        key = self._key("limit")
+        for i in range(10):
+            self.store.append(key, {"seq": i})
+        records = self.store.get(key, limit=3)
+        self.assertEqual([r["seq"] for r in records], [7, 8, 9])
+
+    def test_limit_larger_than_available_returns_all(self):
+        key = self._key("limit-large")
+        self.store.append(key, {"seq": 0})
+        self.store.append(key, {"seq": 1})
+        records = self.store.get(key, limit=100)
+        self.assertEqual([r["seq"] for r in records], [0, 1])
+
 
 class TestBuildStorageBackendPostgresConfig(unittest.TestCase):
     def test_missing_dsn_raises_rather_than_guessing(self):

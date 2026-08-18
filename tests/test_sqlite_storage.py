@@ -53,6 +53,24 @@ class TestSQLiteStorage(unittest.TestCase):
             assert len(store.get("k")) == 1
             store.close()
 
+    def test_limit_returns_most_recent_n_in_chronological_order(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = SQLiteStorage(str(Path(d) / "test.db"))
+            for i in range(10):
+                store.append("agent-1", {"seq": i})
+            records = store.get("agent-1", limit=3)
+            assert [r["seq"] for r in records] == [7, 8, 9]
+            store.close()
+
+    def test_limit_larger_than_available_returns_all(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = SQLiteStorage(str(Path(d) / "test.db"))
+            store.append("agent-1", {"seq": 0})
+            store.append("agent-1", {"seq": 1})
+            records = store.get("agent-1", limit=100)
+            assert [r["seq"] for r in records] == [0, 1]
+            store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

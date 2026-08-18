@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Optional
-
 from guardian.core.intent import ActionIntent
 from guardian.core.models import Decision, DecisionType
 from guardian.memory.storage import InMemoryStorage, MemoryBackend
@@ -43,8 +42,8 @@ class DecisionHistory:
             entry["chain"] = intent.chain
         self.backend.append(agent_id, entry)
 
-    def get(self, agent_id: str) -> List[HistoryRecord]:
-        raw = self.backend.get(agent_id)
+    def get(self, agent_id: str, limit: Optional[int] = None) -> List[HistoryRecord]:
+        raw = self.backend.get(agent_id, limit=limit)
         return [
             HistoryRecord(
                 intent_id=r["intent_id"],

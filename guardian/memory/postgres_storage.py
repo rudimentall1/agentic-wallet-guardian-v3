@@ -53,12 +53,23 @@ class PostgresStorage:
             )
             conn.commit()
 
-    def get(self, key: str) -> List[dict]:
+    def get(self, key: str, limit: Optional[int] = None) -> List[dict]:
         with self.pool.connection() as conn:
-            rows = conn.execute(
-                "SELECT value FROM guardian_history WHERE key = %s ORDER BY id ASC",
-                (key,),
-            ).fetchall()
+            if limit is None:
+                rows = conn.execute(
+                    "SELECT value FROM guardian_history WHERE key = %s ORDER BY id ASC",
+                    (key,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT value FROM (
+                        SELECT id, value FROM guardian_history
+                        WHERE key = %s ORDER BY id DESC LIMIT %s
+                    ) sub ORDER BY id ASC
+                    """,
+                    (key, limit),
+                ).fetchall()
         # psycopg auto-adapts JSONB back into a Python dict already - no
         # json.loads needed here, unlike the SQLite backend which stores
         # value as plain TEXT.

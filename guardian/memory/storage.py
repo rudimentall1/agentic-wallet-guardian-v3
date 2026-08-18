@@ -8,13 +8,13 @@ else in the codebase needs to change.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Protocol
+from typing import Dict, List, Optional, Protocol
 
 
 class MemoryBackend(Protocol):
     def append(self, key: str, value: dict) -> None: ...
 
-    def get(self, key: str) -> List[dict]: ...
+    def get(self, key: str, limit: Optional[int] = None) -> List[dict]: ...
 
 
 class InMemoryStorage:
@@ -24,5 +24,8 @@ class InMemoryStorage:
     def append(self, key: str, value: dict) -> None:
         self._data.setdefault(key, []).append(value)
 
-    def get(self, key: str) -> List[dict]:
-        return list(self._data.get(key, []))
+    def get(self, key: str, limit: Optional[int] = None) -> List[dict]:
+        records = self._data.get(key, [])
+        if limit is not None:
+            records = records[-limit:]
+        return list(records)

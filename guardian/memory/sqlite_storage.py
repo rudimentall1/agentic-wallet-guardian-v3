@@ -20,7 +20,7 @@ import json
 import sqlite3
 import threading
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 
 class SQLiteStorage:
@@ -51,12 +51,26 @@ class SQLiteStorage:
             )
             self._conn.commit()
 
-    def get(self, key: str) -> List[dict]:
+    def get(self, key: str, limit: Optional[int] = None) -> List[dict]:
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT value FROM history WHERE key = ? ORDER BY id ASC",
-                (key,),
-            ).fetchall()
+            if limit is None:
+                rows = self._conn.execute(
+                    "SELECT value FROM history WHERE key = ? ORDER BY id ASC",
+                    (key,),
+                ).fetchall()
+            else:
+                # Most recent `limit` rows, but still returned oldest-first
+                # so callers see the same chronological order as the
+                # unlimited case.
+                rows = self._conn.execute(
+                    """
+                    SELECT value FROM (
+                        SELECT id, value FROM history
+                        WHERE key = ? ORDER BY id DESC LIMIT ?
+                    ) sub ORDER BY id ASC
+                    """,
+                    (key, limit),
+                ).fetchall()
         return [json.loads(r[0]) for r in rows]
 
     def close(self) -> None:
