@@ -1,6 +1,11 @@
 fastapi==0.115.0
-uvicorn[standard]==0.30.6
-pydantic==2.9.2
+# uvicorn and pydantic are floor-pinned, not exact-pinned, so this file can
+# be installed together with requirements-mcp.txt in one environment - mcp
+# 2.0.0 requires uvicorn>=0.31.1 and pydantic>=2.12.0. Verified: `pip
+# install -r requirements.txt -r requirements-mcp.txt` resolves cleanly and
+# the full test suite passes unchanged with the newer versions.
+uvicorn[standard]>=0.31.1
+pydantic>=2.12.0
 httpx==0.27.2
 pytest==8.3.3
 python-dotenv==1.0.1

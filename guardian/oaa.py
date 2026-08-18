@@ -35,14 +35,26 @@ def generate_keypair() -> tuple[bytes, bytes]:
     return private_pem, public_pem
 
 
-def issue(*, issuer, subject, decision, action, reason, policy_ref, private_key_pem) -> str:
+DEFAULT_TTL_SECONDS = 900  # 15 minutes - a decision token should not outlive
+# the window in which the agent is expected to act on it. Pass
+# ttl_seconds=None only if you have a specific reason a decision must
+# remain verifiable indefinitely (e.g. long-term compliance archival) -
+# an attestation with no expiry can otherwise be replayed as "proof of
+# approval" long after the risk context it was evaluated under changed.
+
+
+def issue(*, issuer, subject, decision, action, reason, policy_ref, private_key_pem,
+          ttl_seconds: int | None = DEFAULT_TTL_SECONDS) -> str:
     if decision not in VALID_DECISIONS:
         raise InvalidOAAToken(f"oaa_decision must be one of {sorted(VALID_DECISIONS)}, got {decision!r}")
+    now = int(time.time())
     claims = {
-        "iss": issuer, "sub": subject, "iat": int(time.time()),
+        "iss": issuer, "sub": subject, "iat": now,
         "oaa_decision": decision, "oaa_action": action,
         "oaa_reason": reason, "oaa_policy_ref": policy_ref,
     }
+    if ttl_seconds is not None:
+        claims["exp"] = now + ttl_seconds
     return jwt.encode(claims, private_key_pem, algorithm="EdDSA")
 
 
@@ -59,7 +71,10 @@ class OAAToken:
 
 
 def verify(token: str, public_key_pem: bytes, *, expected_issuer: str | None = None) -> OAAToken:
-    claims = jwt.decode(token, public_key_pem, algorithms=["EdDSA"])
+    try:
+        claims = jwt.decode(token, public_key_pem, algorithms=["EdDSA"])
+    except jwt.ExpiredSignatureError as exc:
+        raise InvalidOAAToken("token expired") from exc
     missing = REQUIRED_CLAIMS - claims.keys()
     if missing:
         raise InvalidOAAToken(f"missing required claims: {sorted(missing)}")

@@ -1,14 +1,17 @@
-# Install this in its OWN virtual environment, separate from requirements.txt.
+# Can be installed together with requirements.txt in the same environment.
 #
-# Why: the mcp package pulls in a starlette version that conflicts with the
-# fastapi version pinned in requirements.txt - installing both into one
-# environment breaks the FastAPI app at runtime (confirmed: FastAPI's
-# Router.__init__ receives an incompatible signature from the newer
-# starlette). mcp_server.py only imports from guardian.*, never api.*, so
-# it has no FastAPI dependency of its own as long as you keep the
-# environments separate.
+# This used to require its own separate venv. That was documented (wrongly)
+# as a starlette conflict; the actual cause was that requirements.txt
+# exact-pinned pydantic==2.9.2 and uvicorn==0.30.6, while mcp==2.0.0 needs
+# pydantic>=2.12.0 and uvicorn>=0.31.1 - starlette itself resolves fine for
+# both (fastapi==0.115.0 accepts starlette<0.39.0,>=0.37.2, mcp==2.0.0
+# accepts starlette>=0.27). Since requirements.txt now floor-pins pydantic
+# and uvicorn instead of exact-pinning them, both files install into one
+# environment cleanly:
 #
-#   python -m venv venv-mcp
-#   venv-mcp/bin/pip install -r requirements-mcp.txt
-#   venv-mcp/bin/python mcp_server.py
+#   pip install -r requirements.txt -r requirements-mcp.txt
+#   python mcp_server.py
+#
+# A separate venv is still fine if you'd rather keep the MCP surface fully
+# isolated from the HTTP API - it's just no longer required.
 mcp==2.0.0

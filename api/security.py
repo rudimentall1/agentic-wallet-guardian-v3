@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import secrets
 import time
-from collections import defaultdict
+from collections import OrderedDict
 from typing import Optional
 
 from fastapi import Header, HTTPException, Request
@@ -51,12 +51,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     In-memory - correct for one process, approximate (each replica limits
     independently) if you run several. Good enough for a self-hosted
     single instance; put a shared store behind this if you scale out.
+
+    ``_counters`` is bounded to ``max_tracked_identities`` via LRU eviction.
+    Without this, an identity that makes one request and never returns
+    (whether a legitimate caller with a rotating IP, or an attacker
+    deliberately varying the Authorization header per request) would sit
+    in memory forever - the per-bucket cleanup below only trims stale
+    *timestamps* for identities that come back, it never removes an
+    identity that doesn't. Left unbounded, that is a practical memory-
+    exhaustion DoS against a tool whose whole job is to be trustworthy
+    under adversarial input.
     """
 
-    def __init__(self, app, limit_per_minute: int):
+    def __init__(self, app, limit_per_minute: int, max_tracked_identities: int = 10_000):
         super().__init__(app)
         self.limit = limit_per_minute
-        self._counters: dict[str, list[float]] = defaultdict(list)
+        self.max_tracked_identities = max_tracked_identities
+        self._counters: "OrderedDict[str, list[float]]" = OrderedDict()
 
     async def dispatch(self, request: Request, call_next):
         if self.limit <= 0:
@@ -67,7 +78,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         now = time.monotonic()
         window_start = now - 60
-        bucket = self._counters[identity]
+
+        bucket = self._counters.get(identity)
+        if bucket is None:
+            bucket = []
+            self._counters[identity] = bucket
+        self._counters.move_to_end(identity)
+
         while bucket and bucket[0] < window_start:
             bucket.pop(0)
 
@@ -75,4 +92,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
 
         bucket.append(now)
+
+        while len(self._counters) > self.max_tracked_identities:
+            self._counters.popitem(last=False)
+
         return await call_next(request)

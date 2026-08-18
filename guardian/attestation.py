@@ -18,10 +18,15 @@ def decision_to_oaa_token(
     *,
     issuer: str,
     private_key_pem: bytes,
+    ttl_seconds: int | None = None,
 ) -> str:
     reasons = list(decision.explanation)
     reasons += [v.message for v in decision.policy_violations]
     reason = "; ".join(reasons) or "no violations, risk within threshold"
+
+    kwargs = {}
+    if ttl_seconds is not None:
+        kwargs["ttl_seconds"] = ttl_seconds
 
     return issue(
         issuer=issuer,
@@ -31,4 +36,5 @@ def decision_to_oaa_token(
         reason=reason,
         policy_ref=_ruleset_fingerprint(),
         private_key_pem=private_key_pem,
+        **kwargs,
     )
