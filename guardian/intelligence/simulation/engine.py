@@ -15,7 +15,7 @@ than nothing when that's all the caller gave us.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from guardian.core.intent import ActionIntent
 from guardian.core.models import Signal
@@ -23,6 +23,7 @@ from guardian.intelligence.simulation.providers import (
     NullSimulationProvider,
     RpcSimulationProvider,
     SimulationProvider,
+    SimulationResult,
 )
 
 
@@ -39,10 +40,19 @@ class SimulationEngine:
         self.provider = provider or NullSimulationProvider()
 
     def simulate(self, intent: ActionIntent) -> List[Signal]:
+        signals, _result = self.simulate_with_result(intent)
+        return signals
+
+    def simulate_with_result(self, intent: ActionIntent) -> Tuple[List[Signal], SimulationResult]:
+        """Same as ``simulate()``, but also returns the raw
+        ``SimulationResult`` - callers that need the decoded approval
+        amount itself (e.g. intent-vs-calldata verification), not just
+        the derived risk signals, should use this instead of calling the
+        provider a second time and re-running the dry run."""
         result = self.provider.simulate(intent)
 
         if not result.attempted:
-            return self._fallback_heuristic(intent, note=result.error)
+            return self._fallback_heuristic(intent, note=result.error), result
 
         signals: List[Signal] = []
 
@@ -55,7 +65,7 @@ class SimulationEngine:
             ))
             # A transaction that would revert can't also leak an unlimited
             # approval - it wouldn't execute at all. Stop here.
-            return signals
+            return signals, result
 
         if result.is_unlimited_approval:
             signals.append(Signal(
@@ -74,7 +84,7 @@ class SimulationEngine:
             source=self.source, name="simulation_succeeds", score=2, weight=0.5,
             confidence=0.9, reason="Dry run confirms this transaction executes successfully at the current chain state",
         ))
-        return signals
+        return signals, result
 
     def _fallback_heuristic(self, intent: ActionIntent, note: Optional[str] = None) -> List[Signal]:
         if intent.action_type == "approve" and (intent.amount is None or intent.amount <= 0):

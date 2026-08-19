@@ -9,7 +9,7 @@ from guardian.decision.engine import DecisionEngine
 from guardian.decision.intent_verification import verify_intent_matches_simulation
 from guardian.decision import intent_verification as intent_verification_module
 from guardian.intelligence.simulation.providers import SimulationResult
-from guardian.policy.capabilities import Capability, CapabilityRegistry, evaluate_capability
+from guardian.policy.capabilities import Capability, CapabilityRegistry
 from guardian.policy import capabilities as capabilities_module
 from guardian.decision import rules as rules_module
 from guardian.oaa import generate_keypair, issue, verify
@@ -25,7 +25,19 @@ registry.grant(Capability(
     max_daily_amount=5000.0,
 ))
 
-engine = DecisionEngine()
+# capability_registry wires the capability check into the engine itself
+# (DecisionEngine.evaluate() calls evaluate_capability() internally now -
+# it used to require calling that function by hand, outside the engine).
+# Intent verification is NOT similarly wired with real decimals below:
+# the engine always calls it with token_decimals=None (no decimals()
+# provider exists in this codebase yet - see decision/engine.py's
+# comment at that call site), so it can only ever emit an honest "cannot
+# verify" WARN through the engine, never the real mismatch-detection
+# BLOCK this demo wants to show. That real check is still called
+# directly here with explicit decimals, same as
+# examples/example_intent_verification.py - this stays a manual step
+# until a decimals provider exists to wire it in for real.
+engine = DecisionEngine(capability_registry=registry)
 private_key, public_key = generate_keypair()
 ISSUER = "https://github.com/rudimentall1/agentic-wallet-guardian-v3"
 
@@ -36,19 +48,6 @@ def _fingerprint(module) -> str:
 
 def run_pipeline(label, intent, simulated_calldata_amount=None):
     print(f"=== {label} ===")
-
-    cap_violations = evaluate_capability(intent, registry)
-    if cap_violations:
-        v = cap_violations[0]
-        print(f"  [1/3] capability: BLOCKED - {v.message}")
-        token = issue(
-            issuer=ISSUER, subject=intent.agent_id, decision="BLOCK",
-            action=f"intent:{intent.intent_id}", reason=v.message,
-            policy_ref=_fingerprint(capabilities_module), private_key_pem=private_key,
-        )
-        _print_attestation(token)
-        return
-    print("  [1/3] capability: OK")
 
     if intent.action_type == "approve" and simulated_calldata_amount is not None:
         sim_result = SimulationResult(
@@ -62,7 +61,7 @@ def run_pipeline(label, intent, simulated_calldata_amount=None):
         blocking = [v for v in iv_violations if v.severity == "BLOCK"]
         if blocking:
             v = blocking[0]
-            print(f"  [2/3] intent verification: BLOCKED - {v.message}")
+            print(f"  [1/3] intent verification (checked manually - see comment above): BLOCKED - {v.message}")
             token = issue(
                 issuer=ISSUER, subject=intent.agent_id, decision="BLOCK",
                 action=f"intent:{intent.intent_id}", reason=v.message,
@@ -70,18 +69,37 @@ def run_pipeline(label, intent, simulated_calldata_amount=None):
             )
             _print_attestation(token)
             return
-        print("  [2/3] intent verification: OK")
+        print("  [1/3] intent verification (checked manually - see comment above): OK")
     else:
-        print("  [2/3] intent verification: skipped (not applicable)")
+        print("  [1/3] intent verification: skipped (not applicable)")
 
+    # Capability enforcement happens inside evaluate() below (registry
+    # was passed to DecisionEngine above) - decision.policy_violations
+    # is where a capability BLOCK would show up if this were opaque, but
+    # we already know which rule fired from the label, so just show the
+    # end-to-end result plus pull the specific violation out for the
+    # attestation reason if the engine did block on it.
     decision = engine.evaluate(intent)
+    capability_rule_names = {
+        "action_type_not_granted", "chain_not_granted", "capability_amount_exceeded",
+        "capability_daily_limit_exceeded", "capability_expired",
+    }
+    capability_hit = next((v for v in decision.policy_violations if v.rule in capability_rule_names), None)
+    if capability_hit:
+        print(f"  [2/3] capability (enforced by the engine): BLOCKED - {capability_hit.message}")
+    else:
+        print("  [2/3] capability (enforced by the engine): OK")
+
     print(f"  [3/3] decision engine: {decision.decision.value} (risk {decision.risk_score:.1f})")
-    reason = "; ".join(decision.explanation) or "no violations, risk within threshold"
+
+    policy_ref = _fingerprint(capabilities_module) if capability_hit else _fingerprint(rules_module)
+    reason = capability_hit.message if capability_hit else (
+        "; ".join(decision.explanation) or "no violations, risk within threshold"
+    )
     token = issue(
         issuer=ISSUER, subject=intent.agent_id, decision=decision.decision.value,
         action=f"intent:{intent.intent_id}", reason=reason,
-        policy_ref=_fingerprint(rules_module),
-        private_key_pem=private_key,
+        policy_ref=policy_ref, private_key_pem=private_key,
     )
     _print_attestation(token)
 
@@ -105,7 +123,7 @@ run_pipeline(
 )
 
 run_pipeline(
-    "Case 3: passes capability + intent verification, reaches full engine",
+    "Case 3: passes intent verification + capability, reaches full engine",
     ActionIntent(agent_id="trading-agent-001", wallet="0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
                  chain="ethereum", action_type="approve", to_token="USDC", amount=500),
     simulated_calldata_amount=500000000,

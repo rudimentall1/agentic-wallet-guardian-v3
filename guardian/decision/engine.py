@@ -25,6 +25,7 @@ from guardian.config import GuardianConfig, get_config
 from guardian.core.context import EvaluationContext
 from guardian.core.intent import ActionIntent
 from guardian.core.models import Decision, DecisionType, PolicyViolation
+from guardian.decision.intent_verification import verify_intent_matches_simulation
 from guardian.decision.rules import evaluate_hard_rules
 from guardian.decision.scoring import RiskFusionEngine
 from guardian.intelligence.anomaly.analyzer import AnomalyAnalyzer
@@ -37,6 +38,7 @@ from guardian.intelligence.token.analyzer import TokenAnalyzer, build_token_prov
 from guardian.intelligence.wallet.analyzer import WalletAnalyzer, build_wallet_provider
 from guardian.memory.history import DecisionHistory
 from guardian.memory.storage import InMemoryStorage, MemoryBackend
+from guardian.policy.capabilities import CapabilityRegistry, evaluate_capability
 from guardian.policy.engine import PolicyEngine
 from guardian.reasoning.confidence import compute_confidence
 from guardian.reasoning.explanation import build_explanation
@@ -76,6 +78,7 @@ class DecisionEngine:
         contract_analyzer: Optional[ContractAnalyzer] = None,
         simulation_engine: Optional[SimulationEngine] = None,
         anomaly_analyzer: Optional[AnomalyAnalyzer] = None,
+        capability_registry: Optional[CapabilityRegistry] = None,
     ):
         config = config or get_config()
         self.wallet_analyzer = wallet_analyzer or WalletAnalyzer(build_wallet_provider(config))
@@ -93,6 +96,13 @@ class DecisionEngine:
         self.history = history or DecisionHistory(build_storage_backend(config))
         self.reputation = AgentReputation(self.history)
         self.anomaly_analyzer = anomaly_analyzer or AnomalyAnalyzer()
+        # None (default) means the capability-grant feature is entirely
+        # off - evaluate_capability() itself already treats an
+        # ungranted agent as unaffected, but keeping the registry
+        # optional here too means a deployment that never calls
+        # grant_capability() pays zero cost and sees zero behavior
+        # change, matching every other opt-in collaborator above.
+        self.capability_registry = capability_registry
 
     def evaluate(self, intent: ActionIntent) -> Decision:
         # 1. Hard rules can short-circuit straight to BLOCK before we spend
@@ -129,10 +139,30 @@ class DecisionEngine:
                     target=built.to or intent.target,
                     metadata={**intent.metadata, "data": built.data, "value": built.value},
                 )
-        for s in self.simulation_engine.simulate(sim_intent):
+        # Simulation runs once here; signals feed risk fusion below, and
+        # the raw result feeds intent verification right after (calling
+        # the provider twice would double real RPC eth_call cost for no
+        # reason).
+        sim_signals, sim_result = self.simulation_engine.simulate_with_result(sim_intent)
+        for s in sim_signals:
             ctx.add_signal(s)
         for s in self.threat_intel.check(intent.wallet, intent.target):
             ctx.add_signal(s)
+
+        # Intent verification: does the declared amount actually match
+        # what the simulated calldata does? Currently only meaningful for
+        # `approve` (see intent_verification.py). token_decimals=None
+        # until a decimals() provider exists (tracked separately) - the
+        # check degrades to an honest "cannot verify" WARN rather than
+        # silently skipping, which is still strictly better than this
+        # never running at all.
+        intent_verification_violations = verify_intent_matches_simulation(
+            intent, sim_result, token_decimals=None,
+        )
+
+        capability_violations: List[PolicyViolation] = []
+        if self.capability_registry is not None:
+            capability_violations = evaluate_capability(intent, self.capability_registry)
 
         # Anomaly detection compares this intent against the agent's own
         # past — must run against history *before* this decision is
@@ -142,7 +172,12 @@ class DecisionEngine:
             ctx.add_signal(s)
 
         # 4. Policy evaluation — business rules independent of statistical risk.
-        policy_violations: List[PolicyViolation] = hard_violations + self.policy_engine.evaluate(ctx)
+        policy_violations: List[PolicyViolation] = (
+            hard_violations
+            + self.policy_engine.evaluate(ctx)
+            + intent_verification_violations
+            + capability_violations
+        )
         if any(v.severity == "BLOCK" for v in policy_violations):
             return self._finalize(intent, DecisionType.BLOCK, 100.0, ctx.signals, policy_violations)
 

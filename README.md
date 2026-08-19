@@ -425,20 +425,33 @@ python skills/guardian-check/scripts/check.py \
    relies on a `BLOCK` from this service in production - it's a security
    tool, so it needs the same scrutiny it applies to others.
 8. ~~Add per-agent capability limits (delegation scoping).~~ Done -
-   `guardian/policy/capabilities.py`. Opt-in: an operator can grant a
-   specific agent a scoped capability (allowed action types, allowed
-   chains, per-action and daily spending caps, an expiry) with zero
-   private-key material involved. Agents with no grant are unaffected -
-   see `examples/example_capability_limits.py`. Real key management
+   `guardian/policy/capabilities.py`, and wired into
+   `DecisionEngine.evaluate()` via an optional `capability_registry`
+   constructor argument (previously it was a standalone module you had
+   to call yourself outside the normal pipeline - see
+   `examples/example_capability_limits.py`, which now runs through
+   `DecisionEngine` directly). Opt-in: pass no registry (the default)
+   and nothing changes; an operator can grant a specific agent a scoped
+   capability (allowed action types, allowed chains, per-action and
+   daily spending caps, an expiry) with zero private-key material
+   involved. Agents with no grant are unaffected. Real key management
    (session keys, account abstraction) remains deliberately out of
    scope - a categorically higher-stakes problem.
-9. ~~Verify declared intent against decoded simulation results.~~ Done
-   for `approve` - `guardian/decision/intent_verification.py` catches
+9. ~~Verify declared intent against decoded simulation results.~~
+   Partially done - `guardian/decision/intent_verification.py` catches
    the case where an agent declares one amount but the actual calldata
    it was handed encodes a meaningfully different (but still finite)
-   one. This is distinct from the existing "unlimited approval"
-   signal, which only catches near-uint256-max values - see
-   `examples/example_intent_verification.py`.
+   one, and `DecisionEngine.evaluate()` now actually calls it (it
+   didn't before - the module and its example script existed, but
+   nothing in the real decision pipeline invoked it). It's still not a
+   working guardrail on its own, though: comparing atomic units needs
+   the token's `decimals()`, and no decimals provider exists yet, so
+   the engine currently calls this with `token_decimals=None` - every
+   `approve` with a successful, finite-amount simulation gets an honest
+   "cannot verify without decimals" WARN instead of either a false
+   BLOCK or a silent skip. See `examples/example_intent_verification.py`
+   for the check actually blocking a real mismatch once decimals are
+   supplied.
 10. ~~Flag actions that deviate from an agent's own historical
     pattern.~~ Done - `guardian/intelligence/anomaly/analyzer.py`.
     Distinct from reputation (a single trust score) and policy (static,
