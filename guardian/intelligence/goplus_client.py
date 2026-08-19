@@ -25,11 +25,21 @@ from __future__ import annotations
 
 import os
 import time
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Tuple
 
 BASE_URL = "https://api.gopluslabs.io/api/v1/token_security"
 TIMEOUT_SECONDS = 6.0
 CACHE_TTL_SECONDS = 300
+# _cache is a process-wide cache keyed by (chain, address) - in a
+# long-running service, agents can drive lookups against effectively
+# unbounded distinct addresses (attacker-influenced token/contract
+# addresses included), so without a cap this grows forever: expired
+# entries were only ever treated as "miss" on read, never actually
+# removed. Same class of memory-exhaustion issue as the rate limiter
+# fixed earlier in api/security.py - bounded the same way, via LRU
+# eviction once the cache exceeds this many entries.
+MAX_CACHE_ENTRIES = 10_000
 
 # ActionIntent.chain (as used throughout this codebase) -> GoPlus chain_id.
 # https://docs.gopluslabs.io/reference/response-details-9 has the full list;
@@ -47,7 +57,7 @@ CHAIN_ID_MAP = {
     # (Token Security API for Solana, still Beta as of this writing).
 }
 
-_cache: Dict[str, Tuple[float, Optional[dict]]] = {}
+_cache: "OrderedDict[str, Tuple[float, Optional[dict]]]" = OrderedDict()
 
 
 def is_chain_supported(chain: str) -> bool:
@@ -71,6 +81,7 @@ def get_token_security(chain: str, address: str, api_key: Optional[str] = None) 
     cache_key = f"{chain_id}:{address}"
     cached = _cache.get(cache_key)
     if cached is not None and (time.time() - cached[0]) < CACHE_TTL_SECONDS:
+        _cache.move_to_end(cache_key)
         return cached[1]
 
     import httpx
@@ -100,6 +111,9 @@ def get_token_security(chain: str, address: str, api_key: Optional[str] = None) 
         result = None
 
     _cache[cache_key] = (time.time(), result)
+    _cache.move_to_end(cache_key)
+    while len(_cache) > MAX_CACHE_ENTRIES:
+        _cache.popitem(last=False)
     return result
 
 

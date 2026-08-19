@@ -73,6 +73,44 @@ class TestGoPlusClient(unittest.TestCase):
             goplus_client.get_token_security("ethereum", GOOD_ADDRESS, api_key="secret123")
         self.assertEqual(mock_get.call_args.kwargs["headers"]["Authorization"], "Bearer secret123")
 
+    def test_cache_is_bounded_by_lru_eviction(self):
+        """Regression test: _cache is a process-wide, long-lived dict keyed
+        by (chain, address). Without a bound, a long-running service
+        looking up enough distinct (attacker-influenced, in the general
+        case) addresses would grow it forever - same class of issue as
+        the rate-limiter fix in api/security.py."""
+        original_max = goplus_client.MAX_CACHE_ENTRIES
+        goplus_client.MAX_CACHE_ENTRIES = 3
+        try:
+            payload = {"code": 1, "message": "ok", "result": {}}
+            with patch("httpx.get", return_value=_mock_response(payload)):
+                for i in range(10):
+                    addr = "0x" + str(i).zfill(40)
+                    goplus_client.get_token_security("ethereum", addr)
+            self.assertLessEqual(len(goplus_client._cache), 3)
+        finally:
+            goplus_client.MAX_CACHE_ENTRIES = original_max
+
+    def test_recently_used_entry_is_not_evicted(self):
+        original_max = goplus_client.MAX_CACHE_ENTRIES
+        goplus_client.MAX_CACHE_ENTRIES = 2
+        try:
+            payload = {"code": 1, "message": "ok", "result": {}}
+            with patch("httpx.get", return_value=_mock_response(payload)) as mock_get:
+                goplus_client.get_token_security("ethereum", "0x" + "1" * 40)
+                goplus_client.get_token_security("ethereum", "0x" + "2" * 40)
+                # Touch the first address again - should move it to the
+                # front of the LRU order.
+                goplus_client.get_token_security("ethereum", "0x" + "1" * 40)
+                self.assertEqual(mock_get.call_count, 2)  # third call was a cache hit
+                # A third *new* address should evict "2", not "1".
+                goplus_client.get_token_security("ethereum", "0x" + "3" * 40)
+                self.assertEqual(len(goplus_client._cache), 2)
+                self.assertIn("1:" + "0x" + "1" * 40, goplus_client._cache)
+                self.assertNotIn("1:" + "0x" + "2" * 40, goplus_client._cache)
+        finally:
+            goplus_client.MAX_CACHE_ENTRIES = original_max
+
 
 class TestContractAnalyzerWithGoPlus(unittest.TestCase):
     def setUp(self):
