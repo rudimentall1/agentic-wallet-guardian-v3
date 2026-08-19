@@ -102,8 +102,18 @@ def decide(payload: DecisionRequest):
 
 
 @app.get("/agents/{agent_id}/history", tags=["core"], dependencies=[Depends(require_api_key)])
-def agent_history(agent_id: str):
-    records = engine.history.get(agent_id)
+def agent_history(agent_id: str, limit: int = 100):
+    # Bounded by default: without this, a heavily-used agent's full,
+    # ever-growing history would be read and serialized into one JSON
+    # response on every call - exactly the unbounded-read cost this
+    # session's reputation/history `limit` param (guardian/memory/*) was
+    # built to avoid, just reached via a different door (this endpoint
+    # wasn't using it). 500 is DecisionEngine's own default
+    # history_window for reputation scoring - capping the same here
+    # keeps this endpoint's cost in the same ballpark as a normal
+    # decision instead of unbounded.
+    limit = max(1, min(limit, 500))
+    records = engine.history.get(agent_id, limit=limit)
     return {
         "agent_id": agent_id,
         "reputation_score": engine.reputation.score_for(agent_id),
@@ -139,8 +149,15 @@ _DEMO_SCENARIOS = {
 }
 
 
-@app.get("/demo/{scenario}", tags=["meta"])
+@app.get("/demo/{scenario}", tags=["meta"], dependencies=[Depends(require_api_key)])
 def demo(scenario: str):
+    # Same auth as /decision and /agents/*/history, not the no-auth
+    # /health and /capabilities it's grouped under by tag: this endpoint
+    # runs the real engine.evaluate() pipeline, same as /decision - with
+    # real providers configured (not the Null/Mock defaults), that means
+    # real RPC/GoPlus/DexScreener calls. Leaving it unauthenticated would
+    # let anyone burn this deployment's provider quota for free, with a
+    # fixed payload but the full pipeline cost, on every call.
     if scenario not in _DEMO_SCENARIOS:
         raise HTTPException(404, f"Unknown scenario '{scenario}'. Try one of: {list(_DEMO_SCENARIOS)}")
     intent = ActionIntent(**_DEMO_SCENARIOS[scenario])
