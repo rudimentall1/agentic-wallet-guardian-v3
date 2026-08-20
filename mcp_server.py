@@ -7,22 +7,15 @@ MCP-capable client can call Guardian as a local tool over stdio, with no
 HTTP client code, no API key to manage, and no network hop if the agent
 runs on the same host.
 
-IMPORTANT - dependency isolation:
-
-    Install this from requirements-mcp.txt in its OWN virtual environment
-    (or its own container), separate from requirements.txt. The mcp
-    package and this project's pinned fastapi version pull in mutually
-    incompatible starlette versions - installing both into one
-    environment silently breaks the FastAPI app at runtime (confirmed:
-    FastAPI's Router.__init__ picks up an incompatible signature from the
-    newer starlette that mcp requires). This server only imports from
-    guardian.*, never from api.*, so it has no FastAPI/starlette
-    dependency of its own - keep it that way by keeping the environments
-    separate.
+Can be installed alongside the REST API's requirements.txt in one
+environment - see the comment at the top of requirements-mcp.txt for
+why (this used to require a separate venv; that was documented as a
+starlette conflict, which turned out to be wrong - the actual cause was
+pydantic/uvicorn version floors, fixed in requirements.txt).
 
 Run:
 
-    pip install -r requirements-mcp.txt   # in its own venv
+    pip install -r requirements.txt -r requirements-mcp.txt
     python mcp_server.py
 
 Then point your MCP client at this command (stdio transport). Example
@@ -97,13 +90,22 @@ def evaluate_action(
 
 
 @mcp.tool()
-def get_agent_history(agent_id: str) -> str:
+def get_agent_history(agent_id: str, limit: int = 100) -> str:
     """Return this agent's past decisions and current reputation score.
 
     Useful before evaluate_action if you want to check standing first, or
     after a WARN/BLOCK to review why.
+
+    Args:
+        agent_id: The agent to look up.
+        limit: Maximum number of most-recent records to return (default
+            100, capped at 500). Same reasoning as the REST API's
+            equivalent /agents/{id}/history?limit= - an agent's history
+            grows without bound, and returning all of it on every call
+            doesn't scale.
     """
-    records = _engine.history.get(agent_id)
+    limit = max(1, min(limit, 500))
+    records = _engine.history.get(agent_id, limit=limit)
     return json.dumps({
         "agent_id": agent_id,
         "reputation_score": _engine.reputation.score_for(agent_id),
