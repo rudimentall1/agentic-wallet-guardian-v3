@@ -41,6 +41,10 @@ def main() -> int:
               "Set it to your running Guardian instance, e.g. http://localhost:8000",
               file=sys.stderr)
         return 3
+    if not api_url.startswith(("http://", "https://")):
+        print(f"GUARDIAN_API_URL must be an http:// or https:// URL, got: {api_url!r}",
+              file=sys.stderr)
+        return 3
 
     payload = {
         "agent_id": args.agent_id,
@@ -56,12 +60,22 @@ def main() -> int:
 
     headers = {"Content-Type": "application/json"}
     if api_key:
-        headers["X-API-Key"] = api_key
+        # Must match api/security.py's require_api_key exactly, which
+        # only ever checks `Authorization: Bearer <key>` - it does not
+        # look at X-API-Key at all. Sending the wrong header name here
+        # doesn't fail loudly: it just means every request gets a 401
+        # once the server has auth enabled (the recommended production
+        # config), which this script then reports as exit 3
+        # "misconfigured/unreachable" - so the whole skill silently
+        # never worked, even when set up exactly as documented.
+        headers["Authorization"] = f"Bearer {api_key}"
 
     req = urllib.request.Request(f"{api_url.rstrip('/')}/decision", data=body, headers=headers, method="POST")
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        # Scheme is validated above (http/https only) - that's the
+        # actual mitigation for bandit's file:// concern on the next line.
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             result = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
