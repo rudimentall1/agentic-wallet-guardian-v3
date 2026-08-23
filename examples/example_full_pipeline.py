@@ -1,18 +1,13 @@
 import sys
 sys.path.insert(0, ".")
 
-import hashlib
-import inspect
-
 from guardian.core.intent import ActionIntent
 from guardian.decision.engine import DecisionEngine
 from guardian.decision.intent_verification import verify_intent_matches_simulation
-from guardian.decision import intent_verification as intent_verification_module
 from guardian.intelligence.simulation.providers import SimulationResult
 from guardian.policy.capabilities import Capability, CapabilityRegistry
-from guardian.policy import capabilities as capabilities_module
-from guardian.decision import rules as rules_module
-from guardian.oaa import generate_keypair, issue, verify
+from guardian.attestation import decision_to_oaa_token
+from guardian.oaa import generate_keypair, verify
 
 USDC_DECIMALS = 6
 
@@ -42,10 +37,6 @@ private_key, public_key = generate_keypair()
 ISSUER = "https://github.com/rudimentall1/agentic-wallet-guardian-v3"
 
 
-def _fingerprint(module) -> str:
-    return "sha256:" + hashlib.sha256(inspect.getsource(module).encode()).hexdigest()
-
-
 def run_pipeline(label, intent, simulated_calldata_amount=None):
     print(f"=== {label} ===")
 
@@ -62,10 +53,19 @@ def run_pipeline(label, intent, simulated_calldata_amount=None):
         if blocking:
             v = blocking[0]
             print(f"  [1/3] intent verification (checked manually - see comment above): BLOCKED - {v.message}")
+            # decision_to_oaa_token takes a Decision, not a raw
+            # PolicyViolation - this manual intent-verification check
+            # happens outside the engine (see comment above), so there's
+            # no Decision object to hand it here. This path's attestation
+            # is necessarily a manual guardian.oaa.issue() call rather
+            # than going through the (now-fixed) policy_ref logic - worth
+            # calling out rather than papering over.
+            from guardian.oaa import issue
             token = issue(
                 issuer=ISSUER, subject=intent.agent_id, decision="BLOCK",
                 action=f"intent:{intent.intent_id}", reason=v.message,
-                policy_ref=_fingerprint(intent_verification_module), private_key_pem=private_key,
+                policy_ref="manual-intent-verification-check:not-a-DecisionEngine-decision",
+                private_key_pem=private_key,
             )
             _print_attestation(token)
             return
@@ -92,14 +92,21 @@ def run_pipeline(label, intent, simulated_calldata_amount=None):
 
     print(f"  [3/3] decision engine: {decision.decision.value} (risk {decision.risk_score:.1f})")
 
-    policy_ref = _fingerprint(capabilities_module) if capability_hit else _fingerprint(rules_module)
-    reason = capability_hit.message if capability_hit else (
-        "; ".join(decision.explanation) or "no violations, risk within threshold"
-    )
-    token = issue(
-        issuer=ISSUER, subject=intent.agent_id, decision=decision.decision.value,
-        action=f"intent:{intent.intent_id}", reason=reason,
-        policy_ref=policy_ref, private_key_pem=private_key,
+    # policy_ref now honestly covers everything that could have produced
+    # this exact decision: rules.py's hard rules, this engine's actual
+    # PolicyEngine.policy (not just DEFAULT_POLICY's source code - the
+    # dict itself, so an operator override would change this too), and
+    # this specific agent's capability grant (not capabilities.py's
+    # source, which is identical for every agent - the actual limits
+    # granted to *this* agent_id). Two deployments with the same rules.py
+    # and capabilities.py but different grants/policy dicts now get
+    # different, honest policy_ref values.
+    token = decision_to_oaa_token(
+        decision,
+        issuer=ISSUER,
+        private_key_pem=private_key,
+        policy_engine=engine.policy_engine,
+        capability_snapshot=registry.snapshot_for(intent.agent_id),
     )
     _print_attestation(token)
 

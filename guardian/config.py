@@ -40,6 +40,43 @@ def _bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in TRUE_VALUES
 
 
+def _agent_api_keys_from_env() -> Dict[str, str]:
+    """Parses ``GUARDIAN_AGENT_API_KEYS="agent_id:key,agent_id2:key2"``.
+
+    Empty/unset (the default) means "no per-agent binding configured" -
+    Guardian falls back to the single global ``GUARDIAN_API_KEY``, exactly
+    as before this existed. That default is a real, known gap: with only
+    a shared key, any caller holding it can put *any* ``agent_id`` in the
+    request body and inherit that agent_id's accumulated reputation and
+    capability grants - there is no way to prove a request claiming to be
+    e.g. "trading-agent-001" actually came from that agent, since nothing
+    cryptographically ties the identity in the payload to the credential
+    that authenticated the request. Setting this makes each agent_id's
+    Authorization key its own - a caller can no longer act as an agent it
+    doesn't hold the key for. See ``api/security.check_agent_bound_key``
+    for how this is enforced; ``GUARDIAN_API_KEY`` keeps working as a
+    master key that can still act as any agent, for admin/tooling use.
+    """
+    raw = os.environ.get("GUARDIAN_AGENT_API_KEYS", "")
+    if not raw.strip():
+        return {}
+    pairs: Dict[str, str] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ":" not in entry:
+            raise ValueError(
+                f"GUARDIAN_AGENT_API_KEYS entry {entry!r} is not in 'agent_id:key' format"
+            )
+        agent_id, key = entry.split(":", 1)
+        agent_id, key = agent_id.strip(), key.strip()
+        if not agent_id or not key:
+            raise ValueError(f"GUARDIAN_AGENT_API_KEYS entry {entry!r} has an empty agent_id or key")
+        pairs[agent_id] = key
+    return pairs
+
+
 def _rpc_urls_from_env() -> Dict[str, str]:
     """Reads ``GUARDIAN_RPC_<CHAIN>`` for every supported chain.
 
@@ -107,13 +144,14 @@ class GuardianConfig:
 
     # --- API security ---
     api_key: Optional[str] = field(default_factory=lambda: os.environ.get("GUARDIAN_API_KEY") or None)
+    agent_api_keys: Dict[str, str] = field(default_factory=_agent_api_keys_from_env)
     rate_limit_per_minute: int = field(
         default_factory=lambda: int(os.environ.get("GUARDIAN_RATE_LIMIT_PER_MINUTE", "60"))
     )
 
     @property
     def auth_enabled(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) or bool(self.agent_api_keys)
 
 
 _config: Optional[GuardianConfig] = None

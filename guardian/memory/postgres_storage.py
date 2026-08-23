@@ -15,7 +15,12 @@ from typing import List, Optional
 
 
 class PostgresStorage:
-    def __init__(self, dsn: str, min_pool_size: int = 1, max_pool_size: int = 5):
+    # See SQLiteStorage.MAX_ROWS_PER_KEY for the reasoning - same default,
+    # same rationale, kept in sync between the two backends.
+    MAX_ROWS_PER_KEY = 5000
+
+    def __init__(self, dsn: str, min_pool_size: int = 1, max_pool_size: int = 5,
+                 max_rows_per_key: Optional[int] = None):
         try:
             import psycopg
             from psycopg_pool import ConnectionPool
@@ -26,6 +31,7 @@ class PostgresStorage:
             ) from e
 
         self._psycopg = psycopg
+        self.max_rows_per_key = max_rows_per_key or self.MAX_ROWS_PER_KEY
         self.pool = ConnectionPool(dsn, min_size=min_pool_size, max_size=max_pool_size, open=True)
         self.pool.wait(timeout=10)
 
@@ -51,6 +57,21 @@ class PostgresStorage:
                 "INSERT INTO guardian_history (key, value) VALUES (%s, %s)",
                 (key, json.dumps(value)),
             )
+            # Same unbounded-growth fix as SQLiteStorage.append(): trim
+            # this key back down to max_rows_per_key on every write. This
+            # table previously had no DELETE anywhere - fine on
+            # SQLite for a single self-hosted instance, but a genuine
+            # operational problem on the backend specifically meant for
+            # "multiple replicas sharing history under real load" (see
+            # the module docstring).
+            conn.execute(
+                """
+                DELETE FROM guardian_history WHERE key = %s AND id NOT IN (
+                    SELECT id FROM guardian_history WHERE key = %s ORDER BY id DESC LIMIT %s
+                )
+                """,
+                (key, key, self.max_rows_per_key),
+            )
             conn.commit()
 
     def get(self, key: str, limit: Optional[int] = None) -> List[dict]:
@@ -74,6 +95,11 @@ class PostgresStorage:
         # json.loads needed here, unlike the SQLite backend which stores
         # value as plain TEXT.
         return [row[0] for row in rows]
+
+    def get_since(self, key: str, since_timestamp: float) -> List[dict]:
+        # See SQLiteStorage.get_since for why this filters on the
+        # record's own "t" field rather than the created_at column.
+        return [r for r in self.get(key) if r.get("t", 0) > since_timestamp]
 
     def close(self) -> None:
         self.pool.close()

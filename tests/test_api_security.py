@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 
-from api.security import make_api_key_dependency
+from api.security import check_agent_bound_key, make_api_key_dependency
 from guardian.config import GuardianConfig
 
 
@@ -39,6 +39,76 @@ class TestApiKeyDependency(unittest.TestCase):
         require_api_key = make_api_key_dependency(config)
         with self.assertRaises(HTTPException):
             require_api_key(authorization="secret123")  # missing "Bearer " prefix
+
+
+class TestAgentBoundKey(unittest.TestCase):
+    """Regression tests for the finding that a single shared API key lets
+    any caller submit any agent_id and inherit its reputation/capability
+    grants. GUARDIAN_AGENT_API_KEYS binds a specific key to a specific
+    agent_id - a different agent's key (or no key) must not authorize it.
+    """
+
+    def test_disabled_when_nothing_configured(self):
+        config = GuardianConfig(api_key=None, agent_api_keys={})
+        check_agent_bound_key(None, "any-agent", config)  # should not raise
+
+    def test_agent_key_authorizes_only_its_own_agent_id(self):
+        config = GuardianConfig(api_key=None, agent_api_keys={"agent-a": "key-a", "agent-b": "key-b"})
+        check_agent_bound_key("Bearer key-a", "agent-a", config)  # should not raise
+        with self.assertRaises(HTTPException) as ctx:
+            check_agent_bound_key("Bearer key-a", "agent-b", config)
+        self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_unregistered_agent_id_is_rejected(self):
+        config = GuardianConfig(api_key=None, agent_api_keys={"agent-a": "key-a"})
+        with self.assertRaises(HTTPException) as ctx:
+            check_agent_bound_key("Bearer key-a", "some-other-agent", config)
+        self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_no_key_at_all_is_rejected_once_per_agent_keys_configured(self):
+        config = GuardianConfig(api_key=None, agent_api_keys={"agent-a": "key-a"})
+        with self.assertRaises(HTTPException):
+            check_agent_bound_key(None, "agent-a", config)
+
+    def test_master_key_authorizes_any_agent_id(self):
+        config = GuardianConfig(api_key="master-secret", agent_api_keys={"agent-a": "key-a"})
+        check_agent_bound_key("Bearer master-secret", "agent-a", config)
+        check_agent_bound_key("Bearer master-secret", "totally-different-agent", config)
+
+    def test_agent_key_does_not_authorize_as_master(self):
+        # An agent-specific key must not work for a *different* agent_id,
+        # even when a master key also exists elsewhere in the deployment.
+        config = GuardianConfig(api_key="master-secret", agent_api_keys={"agent-a": "key-a"})
+        with self.assertRaises(HTTPException):
+            check_agent_bound_key("Bearer key-a", "agent-b", config)
+
+    def test_falls_back_to_global_key_when_no_per_agent_keys_configured(self):
+        # Backward compatibility: single-tenant deployments with only
+        # GUARDIAN_API_KEY set keep working exactly as before.
+        config = GuardianConfig(api_key="secret123", agent_api_keys={})
+        check_agent_bound_key("Bearer secret123", "any-agent", config)
+        with self.assertRaises(HTTPException):
+            check_agent_bound_key("Bearer wrong", "any-agent", config)
+
+    def test_empty_bearer_token_not_accepted_when_only_agent_keys_configured(self):
+        # Regression test: GuardianConfig.auth_enabled can be True from
+        # agent_api_keys alone (api_key=None) - an empty token must still
+        # be rejected, not silently compared against an empty api_key.
+        config = GuardianConfig(api_key=None, agent_api_keys={"agent-a": "key-a"})
+        with self.assertRaises(HTTPException):
+            check_agent_bound_key("Bearer ", "agent-a", config)
+
+
+class TestMasterKeyDependencyWithOnlyAgentKeysConfigured(unittest.TestCase):
+    """Regression test for the same empty-token edge case, but through
+    make_api_key_dependency (used by endpoints with no agent_id to bind,
+    e.g. /demo) rather than check_agent_bound_key."""
+
+    def test_empty_bearer_token_rejected_when_no_master_key_exists(self):
+        config = GuardianConfig(api_key=None, agent_api_keys={"agent-a": "key-a"})
+        require_api_key = make_api_key_dependency(config)
+        with self.assertRaises(HTTPException):
+            require_api_key(authorization="Bearer ")
 
 
 class TestRateLimitMiddleware(unittest.TestCase):

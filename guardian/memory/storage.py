@@ -16,6 +16,19 @@ class MemoryBackend(Protocol):
 
     def get(self, key: str, limit: Optional[int] = None) -> List[dict]: ...
 
+    def get_since(self, key: str, since_timestamp: float) -> List[dict]:
+        """Records for `key` with a `"t"` field greater than
+        `since_timestamp`. Used by CapabilityRegistry for its persistent
+        daily-spend window (see policy/capabilities.py) - a genuine
+        time-window query, not a "most recent N" one, so it must not
+        silently undercount when an agent has made more than some fixed
+        row-count of transactions within the window. Optional on this
+        Protocol (checked with hasattr() by callers) so a custom backend
+        only needs it if it actually wants persistent capability
+        tracking; every built-in backend here implements it.
+        """
+        ...
+
 
 class InMemoryStorage:
     def __init__(self) -> None:
@@ -29,3 +42,6 @@ class InMemoryStorage:
         if limit is not None:
             records = records[-limit:]
         return list(records)
+
+    def get_since(self, key: str, since_timestamp: float) -> List[dict]:
+        return [r for r in self._data.get(key, []) if r.get("t", 0) > since_timestamp]

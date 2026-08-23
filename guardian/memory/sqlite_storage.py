@@ -24,9 +24,20 @@ from typing import List, Optional
 
 
 class SQLiteStorage:
-    def __init__(self, path: str = "data/guardian.db"):
+    # How many rows to retain per key (agent) before trimming the oldest.
+    # Comfortably above every real reader of this data: AgentReputation's
+    # DEFAULT_HISTORY_WINDOW (500) and the /agents/{id}/history endpoint's
+    # hard cap (500) both stay well within this, so trimming never
+    # changes what either of those actually sees - it only bounds disk
+    # growth for a long-lived, high-volume agent that would otherwise
+    # accumulate rows forever (this table only ever INSERTed, never
+    # trimmed, before this).
+    MAX_ROWS_PER_KEY = 5000
+
+    def __init__(self, path: str = "data/guardian.db", max_rows_per_key: Optional[int] = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.max_rows_per_key = max_rows_per_key or self.MAX_ROWS_PER_KEY
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -48,6 +59,19 @@ class SQLiteStorage:
             self._conn.execute(
                 "INSERT INTO history (key, value) VALUES (?, ?)",
                 (key, json.dumps(value)),
+            )
+            # Trim this key back down to max_rows_per_key, oldest rows
+            # first. Runs on every write rather than periodically -
+            # simpler to reason about than a "trim every N writes"
+            # counter, and the DELETE is indexed on `key` so it stays
+            # cheap even as the table grows across many agents.
+            self._conn.execute(
+                """
+                DELETE FROM history WHERE key = ? AND id NOT IN (
+                    SELECT id FROM history WHERE key = ? ORDER BY id DESC LIMIT ?
+                )
+                """,
+                (key, key, self.max_rows_per_key),
             )
             self._conn.commit()
 
@@ -72,6 +96,17 @@ class SQLiteStorage:
                     (key, limit),
                 ).fetchall()
         return [json.loads(r[0]) for r in rows]
+
+    def get_since(self, key: str, since_timestamp: float) -> List[dict]:
+        # Filters on the record's own "t" field (set by the caller, e.g.
+        # CapabilityRegistry) rather than this table's `created_at`
+        # column, so the semantics are identical across every backend
+        # (Postgres's created_at is a TIMESTAMPTZ, not a raw epoch float -
+        # reconciling that per-backend isn't worth it when the caller
+        # already stamps its own records). `self.get(key)` is already
+        # bounded by MAX_ROWS_PER_KEY, so this never scans an unbounded
+        # amount of history.
+        return [r for r in self.get(key) if r.get("t", 0) > since_timestamp]
 
     def close(self) -> None:
         with self._lock:

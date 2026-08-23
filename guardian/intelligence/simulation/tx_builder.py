@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Protocol
 
 from guardian.core.intent import ActionIntent
+from guardian.core.validation import looks_like_address as _looks_like_address
 
 logger = logging.getLogger("guardian.tx_builder")
 

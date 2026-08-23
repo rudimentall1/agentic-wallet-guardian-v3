@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from guardian.core.intent import ActionIntent
 from guardian.core.models import PolicyViolation
+from guardian.memory.storage import MemoryBackend
 
 
 @dataclass
@@ -19,9 +20,21 @@ class Capability:
 
 
 class CapabilityRegistry:
-    def __init__(self) -> None:
+    def __init__(self, storage: Optional[MemoryBackend] = None) -> None:
         self._grants: Dict[str, Capability] = {}
+        # In-memory fallback for the daily-spend window, used only when
+        # no `storage` is supplied - this was previously the *only*
+        # option, which meant any process restart (deploy, crash, routine
+        # rollout) silently reset every agent's daily spend to zero,
+        # letting a capped agent spend its full daily limit again the
+        # same day. Passing a `storage` backend (the same
+        # MemoryBackend used for DecisionHistory - sqlite/postgres/etc.)
+        # persists the spend log across restarts instead. This is opt-in
+        # and backward compatible: existing callers that construct
+        # `CapabilityRegistry()` with no arguments keep the original
+        # in-memory-only behavior unchanged.
         self._daily_spend: Dict[str, List[Tuple[float, float]]] = {}
+        self.storage = storage
 
     def grant(self, capability: Capability) -> None:
         self._grants[capability.agent_id] = capability
@@ -32,9 +45,38 @@ class CapabilityRegistry:
     def get(self, agent_id: str) -> Optional[Capability]:
         return self._grants.get(agent_id)
 
+    def snapshot_for(self, agent_id: str) -> Optional[Dict]:
+        """JSON-serializable snapshot of this agent's grant, for embedding
+        in an OAA attestation's policy_ref (see guardian/attestation.py).
+        A decision made under a stricter/looser grant than another agent -
+        or than this same agent at a different point in time, after
+        `grant()` was called again - should not be attestable as "the same
+        effective policy" just because rules.py and DEFAULT_POLICY were
+        unchanged. Returns None when this agent has no grant at all,
+        which is itself a meaningful, distinct state (unrestricted by any
+        capability grant) worth fingerprinting differently from any
+        specific grant.
+        """
+        cap = self._grants.get(agent_id)
+        if cap is None:
+            return None
+        return {
+            "agent_id": cap.agent_id,
+            "allowed_action_types": cap.allowed_action_types,
+            "allowed_chains": cap.allowed_chains,
+            "max_amount_per_action": cap.max_amount_per_action,
+            "max_daily_amount": cap.max_daily_amount,
+            "expires_at": cap.expires_at,
+        }
+
     def _record_and_sum_today(self, agent_id: str, amount: float) -> float:
         now = time.time()
         window_start = now - 86400
+        if self.storage is not None:
+            key = f"capability_spend:{agent_id}"
+            self.storage.append(key, {"t": now, "a": amount})
+            records = self.storage.get_since(key, window_start)
+            return sum(r["a"] for r in records)
         history = self._daily_spend.setdefault(agent_id, [])
         history[:] = [(t, a) for t, a in history if t > window_start]
         history.append((now, amount))

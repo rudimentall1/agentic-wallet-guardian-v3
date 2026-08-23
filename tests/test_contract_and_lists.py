@@ -61,7 +61,7 @@ class TestBlockscoutContractDataProvider(unittest.TestCase):
         fake_response.json.return_value = {"is_verified": True, "proxy_type": None}
         fake_response.raise_for_status = MagicMock()
         with patch("httpx.get", return_value=fake_response):
-            profile = provider.get_profile("0xabc", "ethereum")
+            profile = provider.get_profile("0xAbC1234567890AbC1234567890aBc12345678901", "ethereum")
         self.assertTrue(profile.is_verified)
         self.assertEqual(profile.data_source, "blockscout")
 
@@ -70,15 +70,35 @@ class TestBlockscoutContractDataProvider(unittest.TestCase):
         fake_response = MagicMock()
         fake_response.status_code = 404
         with patch("httpx.get", return_value=fake_response):
-            profile = provider.get_profile("0xabc", "ethereum")
+            profile = provider.get_profile("0xAbC1234567890AbC1234567890aBc12345678901", "ethereum")
         self.assertFalse(profile.is_verified)
 
     def test_network_failure_degrades_to_unknown(self):
         provider = BlockscoutContractDataProvider(base_url="https://eth.blockscout.com")
         with patch("httpx.get", side_effect=ConnectionError("timeout")):
-            profile = provider.get_profile("0xabc", "ethereum")
+            profile = provider.get_profile("0xAbC1234567890AbC1234567890aBc12345678901", "ethereum")
         self.assertIsNone(profile.is_verified)
         self.assertEqual(profile.data_source, "blockscout_error")
+
+    def test_malformed_address_never_reaches_the_http_call(self):
+        # Regression test: `address` comes straight from
+        # ActionIntent.target with no upstream format validation - this
+        # used to be f-string'd directly into the request URL with
+        # nothing checked at all. A malformed value must now degrade to
+        # an honest "unknown" profile *without* ever calling httpx.get.
+        provider = BlockscoutContractDataProvider(base_url="https://eth.blockscout.com")
+        with patch("httpx.get") as mock_get:
+            profile = provider.get_profile("not-an-address", "ethereum")
+        mock_get.assert_not_called()
+        self.assertIsNone(profile.is_verified)
+        self.assertEqual(profile.data_source, "invalid_address")
+
+    def test_wrong_length_address_is_rejected(self):
+        provider = BlockscoutContractDataProvider(base_url="https://eth.blockscout.com")
+        with patch("httpx.get") as mock_get:
+            profile = provider.get_profile("0xabc", "ethereum")
+        mock_get.assert_not_called()
+        self.assertEqual(profile.data_source, "invalid_address")
 
 
 class TestContractAnalyzerListPrecedence(unittest.TestCase):

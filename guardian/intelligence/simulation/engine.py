@@ -68,8 +68,20 @@ class SimulationEngine:
             return signals, result
 
         if result.is_unlimited_approval:
+            # score=92 is deliberate, not a round number: RiskFusionEngine's
+            # DOMINANT_SIGNAL_THRESHOLD is 90 - a score of 75 here (the
+            # original value) sits *below* that floor, so this signal could
+            # be averaged down by ordinary benign signals (wallet/token/
+            # contract trust) and never force BLOCK on its own, even though
+            # a confirmed unlimited approval is the single most severe
+            # thing this dry run can observe. 92 clears the floor with
+            # margin, so this signal alone guarantees
+            # dominant_floor = 92 * 0.9 = 82.8 >= BLOCK_THRESHOLD (80),
+            # regardless of what else is in the signal mix. See also the
+            # independent, non-score-based BLOCK in intent_verification.py
+            # for the same case - two layers, neither relying on the other.
             signals.append(Signal(
-                source=self.source, name="unlimited_approval_confirmed", score=75, weight=2.0,
+                source=self.source, name="unlimited_approval_confirmed", score=92, weight=2.0,
                 confidence=0.95,
                 reason="Dry run confirms this approve() grants an unlimited (or near-unlimited) spending amount",
             ))

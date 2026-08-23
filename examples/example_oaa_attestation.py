@@ -31,6 +31,12 @@ token = decision_to_oaa_token(
     decision,
     issuer="https://github.com/rudimentall1/agentic-wallet-guardian-v3",
     private_key_pem=private_key,
+    # Passing the actual PolicyEngine that produced this decision means
+    # policy_ref reflects the real effective policy (DEFAULT_POLICY here,
+    # but a deployment with a customized PolicyEngine(policy={...}) would
+    # get a correspondingly different, honest fingerprint) - not just
+    # rules.py's hard rules, which never change based on operator config.
+    policy_engine=engine.policy_engine,
 )
 print(f"\nOAA token:\n{token}")
 

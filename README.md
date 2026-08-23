@@ -291,6 +291,17 @@ mock - see the comments in `.env.example` for every option, and
 `GoPlusTokenDataProvider`'s docstrings for what each one actually
 gives you.
 
+**If more than one agent shares this deployment**, also set
+`GUARDIAN_AGENT_API_KEYS` (format: `agent_id:key,agent_id2:key2`). A
+single `GUARDIAN_API_KEY` only proves *a* caller holds a valid key - it
+does not prove *which* agent_id a given request actually came from, since
+`agent_id` is just a field in the request body. Anyone holding the shared
+key can submit any agent_id and inherit that agent_id's accumulated
+reputation and capability grants. `GUARDIAN_AGENT_API_KEYS` binds each
+agent_id to its own key; `GUARDIAN_API_KEY`, if also set, keeps working
+as a master key that can act as any agent, for admin/testing use. For a
+genuinely single-agent deployment, `GUARDIAN_API_KEY` alone is fine.
+
 ### MCP (no HTTP required)
 
 For agent frameworks that speak MCP (LangChain, CrewAI, Claude Desktop,

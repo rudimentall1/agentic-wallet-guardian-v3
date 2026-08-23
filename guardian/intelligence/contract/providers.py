@@ -20,6 +20,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
+from guardian.core.validation import looks_like_address
+
 logger = logging.getLogger("guardian.contract")
 
 
@@ -72,6 +74,23 @@ class BlockscoutContractDataProvider:
 
     def get_profile(self, address: str, chain: str) -> ContractProfile:
         import httpx
+
+        if not looks_like_address(address):
+            # `address` comes straight from ActionIntent.target - fully
+            # caller-controlled, with no format validation upstream (an
+            # analyzer never rejects an intent for having a malformed
+            # target; that's the analyzers' job, and this was the one
+            # analyzer that skipped it). This used to be f-string'd
+            # directly into the request URL below with nothing checked
+            # at all - a malformed value could reach Blockscout's API as
+            # part of the path, corrupt this provider's cache key
+            # upstream, or produce a confusing request the analyzer would
+            # then silently treat as "unverified" rather than "not
+            # actually an address". Reporting it as unknown here, before
+            # any request is built, is the same "no silent guessing"
+            # rule this codebase already applies elsewhere (see
+            # GoPlusTokenDataProvider for the same pattern with symbols).
+            return ContractProfile(address=address, is_verified=None, is_upgradeable=None, data_source="invalid_address")
 
         url = f"{self.base_url}/api/v2/smart-contracts/{address}"
         try:
@@ -126,6 +145,11 @@ class GoPlusContractDataProvider:
         self.api_key = api_key
 
     def get_profile(self, address: str, chain: str) -> ContractProfile:
+        if not looks_like_address(address):
+            # See BlockscoutContractDataProvider.get_profile for why this
+            # check exists - same unvalidated-input path, same fix.
+            return ContractProfile(address=address, is_verified=None, is_upgradeable=None, data_source="invalid_address")
+
         from guardian.intelligence.goplus_client import get_token_security
 
         data = get_token_security(chain, address, api_key=self.api_key)

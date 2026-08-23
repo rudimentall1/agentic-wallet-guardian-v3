@@ -43,9 +43,18 @@ run_case(
 )
 
 run_case(
-    "Case 4: unlimited approval (already handled elsewhere, no duplicate)",
+    "Case 4: unlimited approval, not acknowledged by the agent - BLOCK",
     ActionIntent(agent_id="agent-42", wallet="0xWallet", chain="ethereum",
                  action_type="approve", to_token="USDC", amount=500),
+    SimulationResult(attempted=True, would_revert=False,
+                      decoded_approval_amount=2**256 - 1, is_unlimited_approval=True),
+)
+
+run_case(
+    "Case 5: unlimited approval, explicitly acknowledged by the agent - passes",
+    ActionIntent(agent_id="agent-42", wallet="0xWallet", chain="ethereum",
+                 action_type="approve", to_token="USDC", amount=500,
+                 metadata={"acknowledge_unlimited_approval": True}),
     SimulationResult(attempted=True, would_revert=False,
                       decoded_approval_amount=2**256 - 1, is_unlimited_approval=True),
 )

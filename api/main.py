@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException
+from typing import Optional
+
+from fastapi import Depends, FastAPI, Header, HTTPException
 
 from api.schemas import DecisionRequest, DecisionResponse
-from api.security import RateLimitMiddleware, make_api_key_dependency
+from api.security import RateLimitMiddleware, check_agent_bound_key, make_api_key_dependency
 from guardian.config import get_config
 from guardian.core.intent import ActionIntent
 from guardian.decision.engine import DecisionEngine
@@ -84,8 +86,15 @@ def capabilities():
     }
 
 
-@app.post("/decision", response_model=DecisionResponse, tags=["core"], dependencies=[Depends(require_api_key)])
-def decide(payload: DecisionRequest):
+@app.post("/decision", response_model=DecisionResponse, tags=["core"])
+def decide(payload: DecisionRequest, authorization: Optional[str] = Header(default=None)):
+    # Agent-bound, not just "is there a valid key at all": when
+    # GUARDIAN_AGENT_API_KEYS is configured, the presented key must match
+    # the specific agent_id in this payload - see check_agent_bound_key's
+    # docstring for why a single shared key isn't enough to trust the
+    # agent_id a caller claims. Falls back to the same global-key-only
+    # check as before when no per-agent keys are configured.
+    check_agent_bound_key(authorization, payload.agent_id, config)
     intent = ActionIntent(
         agent_id=payload.agent_id,
         wallet=payload.wallet,
@@ -101,8 +110,12 @@ def decide(payload: DecisionRequest):
     return decision.to_dict()
 
 
-@app.get("/agents/{agent_id}/history", tags=["core"], dependencies=[Depends(require_api_key)])
-def agent_history(agent_id: str, limit: int = 100):
+@app.get("/agents/{agent_id}/history", tags=["core"])
+def agent_history(agent_id: str, limit: int = 100, authorization: Optional[str] = Header(default=None)):
+    # Agent-bound for the same reason as /decision above: without this,
+    # any holder of a shared key could read *any* agent's reputation and
+    # history, not just query its own.
+    check_agent_bound_key(authorization, agent_id, config)
     # Bounded by default: without this, a heavily-used agent's full,
     # ever-growing history would be read and serialized into one JSON
     # response on every call - exactly the unbounded-read cost this

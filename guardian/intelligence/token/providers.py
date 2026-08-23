@@ -19,6 +19,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
+from guardian.core.validation import looks_like_address as _looks_like_address
+
 logger = logging.getLogger("guardian.token")
 
 
@@ -112,10 +114,6 @@ class DexScreenerTokenDataProvider:
             data_source="dexscreener",
             match_confidence=match_confidence,
         )
-
-
-def _looks_like_address(value: str) -> bool:
-    return value.startswith("0x") and len(value) == 42
 
 
 def _bool_field(data: dict, key: str) -> Optional[bool]:

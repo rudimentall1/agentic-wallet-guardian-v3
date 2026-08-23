@@ -170,16 +170,56 @@ class TestIntentVerificationWiring(unittest.TestCase):
         self.assertFalse(any(v.rule in ("intent_amount_mismatch", "intent_verification_skipped")
                               for v in decision.policy_violations))
 
-    def test_unlimited_approval_short_circuits_before_the_decimals_check(self):
-        # is_unlimited_approval=True returns [] immediately - that case is
-        # already covered by the separate unlimited_approval_confirmed
-        # signal, so it correctly does NOT also emit the "skipped" WARN.
+    def test_unconfirmed_unlimited_approval_is_blocked(self):
+        # A confirmed unlimited approval that the agent did not explicitly
+        # acknowledge is now a hard BLOCK from intent_verification, not a
+        # silent no-op - regardless of what the rest of the signal mix
+        # looks like. This is a deliberate, independent second layer on
+        # top of the unlimited_approval_confirmed Signal's own score
+        # (which alone already forces BLOCK via the risk-fusion dominant
+        # floor - see test_confirmed_unlimited_approval_forces_block below).
         engine = self._engine_with_fake_simulation(decoded_approval_amount=None, is_unlimited=True)
         intent = ActionIntent(agent_id="a1", wallet="0xabc", chain="ethereum",
                                action_type="approve", target="0xdef", amount=0)
         decision = engine.evaluate(intent)
-        self.assertFalse(any(v.rule in ("intent_amount_mismatch", "intent_verification_skipped")
-                              for v in decision.policy_violations))
+        self.assertEqual(decision.decision, DecisionType.BLOCK)
+        self.assertTrue(any(v.rule == "unconfirmed_unlimited_approval" and v.severity == "BLOCK"
+                             for v in decision.policy_violations))
+        self.assertFalse(any(v.rule == "intent_verification_skipped" for v in decision.policy_violations))
+
+    def test_acknowledged_unlimited_approval_is_not_blocked_by_intent_verification(self):
+        # Honest opt-in escape hatch, same pattern as max_slippage_bps /
+        # l2_token elsewhere in this codebase: an agent that explicitly
+        # says it wants an unlimited approval (a real, if risky, pattern
+        # some DeFi integrations require) is not silently overridden.
+        engine = self._engine_with_fake_simulation(decoded_approval_amount=None, is_unlimited=True)
+        intent = ActionIntent(agent_id="a1", wallet="0xabc", chain="ethereum",
+                               action_type="approve", target="0xdef", amount=0,
+                               metadata={"acknowledge_unlimited_approval": True})
+        decision = engine.evaluate(intent)
+        self.assertFalse(any(v.rule == "unconfirmed_unlimited_approval" for v in decision.policy_violations))
+
+    def test_confirmed_unlimited_approval_forces_block_via_score_alone(self):
+        # Layer 1 (risk score): even without the intent_verification BLOCK
+        # above, the unlimited_approval_confirmed Signal's own score
+        # (92, above RiskFusionEngine.DOMINANT_SIGNAL_THRESHOLD=90) must be
+        # enough on its own to force BLOCK, so this doesn't depend on
+        # being diluted by whatever else is in the signal mix that
+        # request. Regression test for the finding that score=75 (the
+        # original value) sat *below* the dominant-floor threshold and
+        # could be averaged down by ordinary benign signals.
+        from guardian.decision.scoring import RiskFusionEngine
+        from guardian.core.models import Signal
+
+        fusion = RiskFusionEngine()
+        signals = [
+            Signal(source="simulation", name="unlimited_approval_confirmed", score=92, weight=2.0, confidence=0.95),
+            Signal(source="wallet", name="wallet_established", score=10, weight=1.0, confidence=0.9),
+            Signal(source="token", name="token_trusted", score=10, weight=1.0, confidence=0.9),
+            Signal(source="contract", name="contract_verified", score=10, weight=1.0, confidence=0.9),
+        ]
+        fused = fusion.fuse(signals)
+        self.assertGreaterEqual(fused, 80.0)  # DecisionEngine.BLOCK_THRESHOLD
 
     def test_underlying_function_does_block_a_real_mismatch_once_decimals_are_known(self):
         # This exercises verify_intent_matches_simulation() directly

@@ -93,6 +93,21 @@ class TestPostgresStorage(unittest.TestCase):
         records = self.store.get(key, limit=100)
         self.assertEqual([r["seq"] for r in records], [0, 1])
 
+    def test_old_rows_are_trimmed_beyond_max_rows_per_key(self):
+        # Regression test for the unbounded-growth finding - same fix and
+        # same test shape as SQLiteStorage's version.
+        from guardian.memory.postgres_storage import PostgresStorage
+        capped_store = PostgresStorage(TEST_DSN, max_rows_per_key=5)
+        try:
+            key = self._key("trim-test")
+            for i in range(20):
+                capped_store.append(key, {"seq": i})
+            records = capped_store.get(key)
+            self.assertEqual(len(records), 5)
+            self.assertEqual([r["seq"] for r in records], [15, 16, 17, 18, 19])
+        finally:
+            capped_store.close()
+
 
 class TestBuildStorageBackendPostgresConfig(unittest.TestCase):
     def test_missing_dsn_raises_rather_than_guessing(self):

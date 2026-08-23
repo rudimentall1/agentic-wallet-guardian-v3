@@ -71,6 +71,43 @@ class TestSQLiteStorage(unittest.TestCase):
             assert [r["seq"] for r in records] == [0, 1]
             store.close()
 
+    def test_old_rows_are_trimmed_beyond_max_rows_per_key(self):
+        # Regression test for the unbounded-growth finding: this table
+        # used to have zero DELETEs, so a long-lived active agent's row
+        # count (and disk usage) grew forever.
+        with tempfile.TemporaryDirectory() as d:
+            store = SQLiteStorage(str(Path(d) / "test.db"), max_rows_per_key=5)
+            for i in range(20):
+                store.append("agent-1", {"seq": i})
+            all_records = store.get("agent-1")
+            assert len(all_records) == 5
+            # The retained rows must be the most recent ones, not an
+            # arbitrary 5 - trimming the *oldest* rows is the point.
+            assert [r["seq"] for r in all_records] == [15, 16, 17, 18, 19]
+            store.close()
+
+    def test_trimming_is_isolated_per_key(self):
+        # One agent hitting its retention cap must not affect another
+        # agent's rows in the same table.
+        with tempfile.TemporaryDirectory() as d:
+            store = SQLiteStorage(str(Path(d) / "test.db"), max_rows_per_key=3)
+            for i in range(10):
+                store.append("busy-agent", {"seq": i})
+            store.append("quiet-agent", {"seq": "only-one"})
+            assert len(store.get("busy-agent")) == 3
+            assert len(store.get("quiet-agent")) == 1
+            store.close()
+
+    def test_default_cap_does_not_affect_normal_usage(self):
+        # The default (5000) must not trim realistic amounts of history -
+        # only the pathological long-run case this is meant to bound.
+        with tempfile.TemporaryDirectory() as d:
+            store = SQLiteStorage(str(Path(d) / "test.db"))
+            for i in range(50):
+                store.append("agent-1", {"seq": i})
+            assert len(store.get("agent-1")) == 50
+            store.close()
+
 
 if __name__ == "__main__":
     unittest.main()
