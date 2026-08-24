@@ -25,6 +25,7 @@ from guardian.config import GuardianConfig, get_config
 from guardian.core.context import EvaluationContext
 from guardian.core.intent import ActionIntent
 from guardian.core.models import Decision, DecisionType, PolicyViolation
+from guardian.core.validation import looks_like_address
 from guardian.decision.intent_verification import verify_intent_matches_simulation
 from guardian.decision.rules import evaluate_hard_rules
 from guardian.decision.scoring import RiskFusionEngine
@@ -35,6 +36,11 @@ from guardian.intelligence.simulation.tx_builder import build_transaction_builde
 from guardian.intelligence.threat.blocklist import AddressList
 from guardian.intelligence.threat.intelligence import ThreatIntelligence
 from guardian.intelligence.token.analyzer import TokenAnalyzer, build_token_provider
+from guardian.intelligence.token.decimals import (
+    NullTokenDecimalsProvider,
+    TokenDecimalsProvider,
+    build_token_decimals_provider,
+)
 from guardian.intelligence.wallet.analyzer import WalletAnalyzer, build_wallet_provider
 from guardian.memory.history import DecisionHistory
 from guardian.memory.storage import InMemoryStorage, MemoryBackend
@@ -79,6 +85,7 @@ class DecisionEngine:
         simulation_engine: Optional[SimulationEngine] = None,
         anomaly_analyzer: Optional[AnomalyAnalyzer] = None,
         capability_registry: Optional[CapabilityRegistry] = None,
+        decimals_provider: Optional[TokenDecimalsProvider] = None,
     ):
         config = config or get_config()
         self.wallet_analyzer = wallet_analyzer or WalletAnalyzer(build_wallet_provider(config))
@@ -89,7 +96,26 @@ class DecisionEngine:
             known_malicious=AddressList(config.malicious_contracts_path),
         )
         self.simulation_engine = simulation_engine or SimulationEngine(build_simulation_provider(config))
-        self.tx_builder = build_transaction_builder(config)
+        # Built before tx_builder so tx_builder can share its cache (see
+        # RpcTransactionBuilder's decimals_provider parameter) instead of
+        # doing its own independent, uncached decimals() lookups for the
+        # same token this engine may also look up during intent
+        # verification below.
+        self.decimals_provider = decimals_provider or build_token_decimals_provider(config)
+        # Only share a *real* decimals provider with tx_builder - passing
+        # the NullTokenDecimalsProvider default here would make
+        # RpcTransactionBuilder ask it (always None) instead of falling
+        # back to its own, independent eth_call-based lookup, which is
+        # still correct - just not deduped through a shared cache. That
+        # fallback is exactly what activates when GUARDIAN_DECIMALS_PROVIDER
+        # is left at its "null" default but GUARDIAN_TX_BUILDER=rpc is
+        # configured (a real tx builder with no separate decimals feature
+        # opted into yet) - a real Guardian deployment already running
+        # before this feature existed.
+        shared_decimals_provider = (
+            self.decimals_provider if not isinstance(self.decimals_provider, NullTokenDecimalsProvider) else None
+        )
+        self.tx_builder = build_transaction_builder(config, decimals_provider=shared_decimals_provider)
         self.threat_intel = ThreatIntelligence(AddressList(config.sanctioned_addresses_path))
         self.risk_fusion = RiskFusionEngine()
         self.policy_engine = policy_engine or PolicyEngine()
@@ -151,13 +177,20 @@ class DecisionEngine:
 
         # Intent verification: does the declared amount actually match
         # what the simulated calldata does? Currently only meaningful for
-        # `approve` (see intent_verification.py). token_decimals=None
-        # until a decimals() provider exists (tracked separately) - the
-        # check degrades to an honest "cannot verify" WARN rather than
-        # silently skipping, which is still strictly better than this
-        # never running at all.
+        # `approve` (see intent_verification.py). token_decimals comes
+        # from self.decimals_provider - NullTokenDecimalsProvider by
+        # default (always None, same "cannot verify" WARN as before this
+        # existed), or a real eth_call-backed lookup with
+        # GUARDIAN_DECIMALS_PROVIDER=rpc configured. Only ever looked up
+        # for `approve` (the only action type this check does anything
+        # for) and only when from_token is a real address rather than a
+        # bare symbol like "USDC" - see ActionIntent.from_token's
+        # docstring for why that's the right field.
+        token_decimals = None
+        if intent.action_type == "approve" and looks_like_address(intent.from_token):
+            token_decimals = self.decimals_provider.get_decimals(intent.from_token, intent.chain)
         intent_verification_violations = verify_intent_matches_simulation(
-            intent, sim_result, token_decimals=None,
+            intent, sim_result, token_decimals=token_decimals,
         )
 
         capability_violations: List[PolicyViolation] = []

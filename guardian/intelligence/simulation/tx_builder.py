@@ -44,10 +44,13 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Protocol
+from typing import TYPE_CHECKING, Dict, Optional, Protocol
 
 from guardian.core.intent import ActionIntent
 from guardian.core.validation import looks_like_address as _looks_like_address
+
+if TYPE_CHECKING:
+    from guardian.intelligence.token.decimals import TokenDecimalsProvider
 
 logger = logging.getLogger("guardian.tx_builder")
 
@@ -167,11 +170,23 @@ class RpcTransactionBuilder:
 
     name = "rpc"
 
-    def __init__(self, rpc_urls: Dict[str, str], timeout: float = 5.0, router_addresses: Optional[Dict[str, str]] = None):
+    def __init__(self, rpc_urls: Dict[str, str], timeout: float = 5.0,
+                 router_addresses: Optional[Dict[str, str]] = None,
+                 decimals_provider: Optional["TokenDecimalsProvider"] = None):
         self.rpc_urls = rpc_urls
         self.timeout = timeout
         self._clients: Dict[str, object] = {}
         self.router_addresses = router_addresses or DEFAULT_ROUTER_ADDRESSES
+        # Optional shared decimals provider (see
+        # guardian/intelligence/token/decimals.py) - when given, this
+        # reuses its cache instead of this class's own independent,
+        # uncached eth_call for the same (chain, token_address) that
+        # DecisionEngine's intent-verification step may *also* be
+        # looking up for the very same intent. Defaults to None (falls
+        # back to this class's own _fetch_decimals below) so existing
+        # callers that construct RpcTransactionBuilder directly, without
+        # a decimals provider, keep working exactly as before.
+        self._decimals_provider = decimals_provider
 
     def _client(self, chain: str):
         if chain in self._clients:
@@ -185,8 +200,11 @@ class RpcTransactionBuilder:
         self._clients[chain] = w3
         return w3
 
-    def _fetch_decimals(self, w3, token_address: str) -> Optional[int]:
+    def _fetch_decimals(self, chain: str, token_address: str) -> Optional[int]:
+        if self._decimals_provider is not None:
+            return self._decimals_provider.get_decimals(token_address, chain)
         try:
+            w3 = self._client(chain)
             checksum = w3.to_checksum_address(token_address)
             result = w3.eth.call({"to": checksum, "data": f"0x{DECIMALS_SELECTOR}"})
             return int.from_bytes(result, byteorder="big")
@@ -227,7 +245,7 @@ class RpcTransactionBuilder:
             if intent.amount is None:
                 amount_units = UNLIMITED_APPROVAL
             else:
-                decimals = self._fetch_decimals(w3, intent.from_token)
+                decimals = self._fetch_decimals(intent.chain, intent.from_token)
                 if decimals is None:
                     return None
                 amount_units = int(intent.amount * 10**decimals)
@@ -237,7 +255,7 @@ class RpcTransactionBuilder:
         # transfer of an ERC-20 token
         if intent.amount is None:
             return None
-        decimals = self._fetch_decimals(w3, intent.from_token)
+        decimals = self._fetch_decimals(intent.chain, intent.from_token)
         if decimals is None:
             return None
         amount_units = int(intent.amount * 10**decimals)
@@ -295,7 +313,7 @@ class RpcTransactionBuilder:
             logger.warning("Transaction builder setup failed for intent %s", intent.intent_id, exc_info=True)
             return None
 
-        from_decimals = self._fetch_decimals(w3, intent.from_token)
+        from_decimals = self._fetch_decimals(intent.chain, intent.from_token)
         if from_decimals is None:
             return None
         amount_in_units = int(intent.amount * 10**from_decimals)
@@ -393,7 +411,7 @@ class RpcTransactionBuilder:
         except Exception:
             logger.warning("Transaction builder setup failed for intent %s", intent.intent_id, exc_info=True)
             return None
-        decimals = self._fetch_decimals(w3, intent.from_token)
+        decimals = self._fetch_decimals(intent.chain, intent.from_token)
         if decimals is None:
             return None
         amount_units = int(intent.amount * 10**decimals)
@@ -414,7 +432,10 @@ class RpcTransactionBuilder:
         )
 
 
-def build_transaction_builder(config) -> TransactionBuilder:
+def build_transaction_builder(config, decimals_provider: Optional["TokenDecimalsProvider"] = None) -> TransactionBuilder:
     if getattr(config, "tx_builder_provider", "null") == "rpc":
-        return RpcTransactionBuilder(rpc_urls=config.rpc_urls, timeout=config.provider_timeout_seconds)
+        return RpcTransactionBuilder(
+            rpc_urls=config.rpc_urls, timeout=config.provider_timeout_seconds,
+            decimals_provider=decimals_provider,
+        )
     return NullTransactionBuilder()

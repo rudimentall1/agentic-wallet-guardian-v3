@@ -21,6 +21,11 @@ class ActionIntent:
     chain: str = "ethereum"
     action_type: str = "unknown"  # swap | transfer | approve | contract_call | bridge ...
     target: Optional[str] = None  # contract / recipient address
+    # For `approve`/`transfer`: from_token is the ERC-20 token contract
+    # being approved/transferred (this is what RpcTransactionBuilder
+    # requires to build real calldata - see tx_builder.py - and what
+    # DecisionEngine looks decimals() up for during intent verification).
+    # For `swap`: from_token/to_token are the two sides of the trade.
     from_token: Optional[str] = None
     to_token: Optional[str] = None
     amount: Optional[float] = None

@@ -20,7 +20,7 @@ def run_case(label, intent, sim, decimals=USDC_DECIMALS):
 run_case(
     "Case 1: declared amount matches calldata",
     ActionIntent(agent_id="agent-42", wallet="0xWallet", chain="ethereum",
-                 action_type="approve", to_token="USDC", amount=500),
+                 action_type="approve", from_token="USDC", amount=500),
     SimulationResult(attempted=True, would_revert=False,
                       decoded_approval_amount=500_000000, is_unlimited_approval=False),
 )
@@ -28,7 +28,7 @@ run_case(
 run_case(
     "Case 2: agent said 500, calldata actually encodes 5000",
     ActionIntent(agent_id="agent-42", wallet="0xWallet", chain="ethereum",
-                 action_type="approve", to_token="USDC", amount=500),
+                 action_type="approve", from_token="USDC", amount=500),
     SimulationResult(attempted=True, would_revert=False,
                       decoded_approval_amount=5_000_000000, is_unlimited_approval=False),
 )
@@ -36,7 +36,7 @@ run_case(
 run_case(
     "Case 3: decimals unknown - refuses to guess",
     ActionIntent(agent_id="agent-42", wallet="0xWallet", chain="ethereum",
-                 action_type="approve", to_token="???", amount=500),
+                 action_type="approve", from_token="???", amount=500),
     SimulationResult(attempted=True, would_revert=False,
                       decoded_approval_amount=500_000000, is_unlimited_approval=False),
     decimals=None,
@@ -45,7 +45,7 @@ run_case(
 run_case(
     "Case 4: unlimited approval, not acknowledged by the agent - BLOCK",
     ActionIntent(agent_id="agent-42", wallet="0xWallet", chain="ethereum",
-                 action_type="approve", to_token="USDC", amount=500),
+                 action_type="approve", from_token="USDC", amount=500),
     SimulationResult(attempted=True, would_revert=False,
                       decoded_approval_amount=2**256 - 1, is_unlimited_approval=True),
 )
@@ -53,7 +53,7 @@ run_case(
 run_case(
     "Case 5: unlimited approval, explicitly acknowledged by the agent - passes",
     ActionIntent(agent_id="agent-42", wallet="0xWallet", chain="ethereum",
-                 action_type="approve", to_token="USDC", amount=500,
+                 action_type="approve", from_token="USDC", amount=500,
                  metadata={"acknowledge_unlimited_approval": True}),
     SimulationResult(attempted=True, would_revert=False,
                       decoded_approval_amount=2**256 - 1, is_unlimited_approval=True),

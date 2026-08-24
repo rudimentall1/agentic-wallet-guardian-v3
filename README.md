@@ -211,6 +211,21 @@ isn't the same as "flip a switch and trust it blindly." Specifics:
   slower proof/challenge-window flow, not a variant of the deposit call.
   Bridging to anywhere else, or via any non-canonical bridge, returns
   `None` rather than guessing.
+- **Intent verification can now actually enforce, not just flag.**
+  `decision/intent_verification.py` compares an agent's declared
+  `approve` amount against what the simulated calldata really encodes -
+  but that comparison needs the token's `decimals()` to convert between
+  human units and atomic ones. `GUARDIAN_DECIMALS_PROVIDER=rpc`
+  (`RpcTokenDecimalsProvider`, see
+  `guardian/intelligence/token/decimals.py`) fetches that for real via
+  `eth_call`, cached forever per (chain, token) since a deployed
+  contract's `decimals()` can't change. Left at its `null` default, a
+  mismatch this module could otherwise catch degrades to an honest
+  "cannot verify" WARN instead - same "no silent guessing" rule as
+  everywhere else in this module, not a gap that got missed.
+  `RpcTransactionBuilder` shares this same cache when both are
+  configured with a real provider, instead of doing its own independent,
+  uncached lookup for the same token.
 - **Storage:** `InMemoryStorage` (default, zero setup), `SQLiteStorage`
   (`GUARDIAN_STORAGE_BACKEND=sqlite` - persists across restarts, no
   external infra), or `PostgresStorage`
@@ -449,20 +464,28 @@ python skills/guardian-check/scripts/check.py \
    (session keys, account abstraction) remains deliberately out of
    scope - a categorically higher-stakes problem.
 9. ~~Verify declared intent against decoded simulation results.~~
-   Partially done - `guardian/decision/intent_verification.py` catches
+   Done - `guardian/decision/intent_verification.py` catches
    the case where an agent declares one amount but the actual calldata
    it was handed encodes a meaningfully different (but still finite)
    one, and `DecisionEngine.evaluate()` now actually calls it (it
    didn't before - the module and its example script existed, but
-   nothing in the real decision pipeline invoked it). It's still not a
-   working guardrail on its own, though: comparing atomic units needs
-   the token's `decimals()`, and no decimals provider exists yet, so
-   the engine currently calls this with `token_decimals=None` - every
-   `approve` with a successful, finite-amount simulation gets an honest
-   "cannot verify without decimals" WARN instead of either a false
-   BLOCK or a silent skip. See `examples/example_intent_verification.py`
-   for the check actually blocking a real mismatch once decimals are
-   supplied.
+   nothing in the real decision pipeline invoked it). ~~It's still not
+   a working guardrail on its own, though: comparing atomic units needs
+   the token's `decimals()`, and no decimals provider exists yet.~~
+   `GUARDIAN_DECIMALS_PROVIDER=rpc` (`RpcTokenDecimalsProvider`, see
+   `guardian/intelligence/token/decimals.py`) closes that: a real
+   `eth_call` to the token's own `decimals()`, cached forever per
+   (chain, token) since that value can never change once a contract is
+   deployed. Left at its `null` default, every `approve` with a
+   successful, finite-amount simulation still gets an honest "cannot
+   verify without decimals" WARN instead of either a false BLOCK or a
+   silent skip - configuring the real provider is what turns that into
+   an actual BLOCK on a genuine mismatch. See
+   `examples/example_intent_verification.py` for the check blocking a
+   real mismatch, and `tests/test_decision_engine.py`'s
+   `TestIntentVerificationWithRealDecimalsProvider` for the end-to-end
+   version wired through a real (mocked-RPC) decimals lookup rather
+   than a hand-supplied `token_decimals` argument.
 10. ~~Flag actions that deviate from an agent's own historical
     pattern.~~ Done - `guardian/intelligence/anomaly/analyzer.py`.
     Distinct from reputation (a single trust score) and policy (static,

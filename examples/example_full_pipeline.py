@@ -125,13 +125,13 @@ run_pipeline(
 run_pipeline(
     "Case 2: blocked by intent verification (500 declared, 5000 in calldata)",
     ActionIntent(agent_id="trading-agent-001", wallet="0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-                 chain="ethereum", action_type="approve", to_token="USDC", amount=500),
+                 chain="ethereum", action_type="approve", from_token="USDC", amount=500),
     simulated_calldata_amount=5000000000,
 )
 
 run_pipeline(
     "Case 3: passes intent verification + capability, reaches full engine",
     ActionIntent(agent_id="trading-agent-001", wallet="0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-                 chain="ethereum", action_type="approve", to_token="USDC", amount=500),
+                 chain="ethereum", action_type="approve", from_token="USDC", amount=500),
     simulated_calldata_amount=500000000,
 )
