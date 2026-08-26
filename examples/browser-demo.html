@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guardian — Live Decision Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0a0d12;
+    --panel: #12161d;
+    --panel-2: #171c25;
+    --hairline: #232935;
+    --text: #e6e9ef;
+    --text-dim: #7b8496;
+    --text-faint: #4a525f;
+    --allow: #2fe6a8;
+    --warn: #ffb020;
+    --block: #ff4d5e;
+    --allow-dim: rgba(47,230,168,.12);
+    --warn-dim: rgba(255,176,32,.12);
+    --block-dim: rgba(255,77,94,.12);
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+    min-height:100vh;
+  }
+  ::selection{background:var(--allow-dim); color:var(--allow)}
+
+  /* boot sequence */
+  .boot{
+    position:fixed; inset:0; background:var(--bg); z-index:50;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); color:var(--text-dim); font-size:13px;
+    transition:opacity .5s ease;
+  }
+  .boot.hide{opacity:0; pointer-events:none}
+  .boot-line{opacity:0; animation:bootIn .35s ease forwards}
+  .boot-line:nth-child(1){animation-delay:.05s}
+  .boot-line:nth-child(2){animation-delay:.25s}
+  .boot-line:nth-child(3){animation-delay:.45s}
+  @keyframes bootIn{to{opacity:1}}
+
+  header{
+    display:flex; align-items:center; gap:14px; padding:18px 28px;
+    border-bottom:1px solid var(--hairline); background:var(--panel);
+  }
+  .logo{
+    width:34px; height:34px; border-radius:8px; flex-shrink:0;
+    background:linear-gradient(150deg, #1a2230, #0d1117);
+    border:1px solid var(--hairline); position:relative;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .logo svg{width:18px; height:18px}
+  h1{font-size:15px; font-weight:600; margin:0; letter-spacing:.01em}
+  .sub{font-size:12px; color:var(--text-dim); margin-top:1px}
+  .conn{margin-left:auto; display:flex; align-items:center; gap:10px}
+  .conn-dot{width:7px; height:7px; border-radius:50%; background:var(--text-faint); transition:background .2s}
+  .conn-dot.live{background:var(--allow); box-shadow:0 0 0 3px var(--allow-dim)}
+  .conn-dot.down{background:var(--block); box-shadow:0 0 0 3px var(--block-dim)}
+  .conn-label{font-family:var(--mono); font-size:11px; color:var(--text-dim)}
+
+  .config{
+    display:flex; gap:8px; padding:10px 28px; border-bottom:1px solid var(--hairline);
+    background:var(--panel-2); font-family:var(--mono); font-size:12px; align-items:center;
+    flex-wrap:wrap;
+  }
+  .config label{color:var(--text-faint); font-size:11px}
+  .config input{
+    background:var(--bg); border:1px solid var(--hairline); color:var(--text);
+    border-radius:6px; padding:6px 10px; font-family:var(--mono); font-size:12px;
+    outline:none; transition:border-color .15s;
+  }
+  .config input:focus{border-color:var(--allow)}
+  #apiUrl{width:220px}
+  #apiKey{width:150px}
+  .btn-test{
+    background:transparent; border:1px solid var(--hairline); color:var(--text-dim);
+    border-radius:6px; padding:6px 12px; font-family:var(--mono); font-size:11px;
+    cursor:pointer; transition:all .15s;
+  }
+  .btn-test:hover{border-color:var(--allow); color:var(--allow)}
+
+  main{display:grid; grid-template-columns:280px 1fr; gap:0; min-height:calc(100vh - 105px)}
+  @media (max-width:860px){ main{grid-template-columns:1fr} }
+
+  .rail{border-right:1px solid var(--hairline); padding:22px 18px; background:var(--panel)}
+  .rail h2{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); margin:0 0 12px}
+  .scenario{
+    display:block; width:100%; text-align:left; background:var(--panel-2);
+    border:1px solid var(--hairline); border-radius:8px; padding:12px 14px;
+    color:var(--text); margin-bottom:8px; cursor:pointer; transition:all .15s;
+    font-family:var(--sans);
+  }
+  .scenario:hover{border-color:var(--text-faint); transform:translateX(2px)}
+  .scenario:active{transform:translateX(0)}
+  .scenario .sc-name{font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px}
+  .scenario .sc-desc{font-size:11.5px; color:var(--text-dim); margin-top:3px; line-height:1.4}
+  .sc-dot{width:6px; height:6px; border-radius:50%; flex-shrink:0}
+  .sc-dot.allow{background:var(--allow)}
+  .sc-dot.warn{background:var(--warn)}
+  .sc-dot.block{background:var(--block)}
+
+  .custom-toggle{
+    margin-top:18px; font-size:12px; color:var(--text-dim); cursor:pointer;
+    display:flex; align-items:center; gap:6px; user-select:none;
+  }
+  .custom-toggle:hover{color:var(--text)}
+  .custom-form{display:none; margin-top:12px; flex-direction:column; gap:8px}
+  .custom-form.open{display:flex}
+  .custom-form input, .custom-form select{
+    background:var(--bg); border:1px solid var(--hairline); color:var(--text);
+    border-radius:6px; padding:8px 10px; font-family:var(--mono); font-size:12px; outline:none;
+  }
+  .custom-form label{font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em}
+  .custom-form button{
+    margin-top:4px; background:var(--allow-dim); border:1px solid var(--allow); color:var(--allow);
+    border-radius:6px; padding:9px; font-family:var(--sans); font-weight:600; font-size:12.5px;
+    cursor:pointer;
+  }
+
+  .stage{padding:22px 28px; display:flex; flex-direction:column; gap:18px}
+
+  .empty-state{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:var(--text-faint); font-family:var(--mono); font-size:13px; text-align:center; gap:8px;
+    min-height:320px;
+  }
+  .empty-state svg{opacity:.3; margin-bottom:6px}
+
+  .req-panel{
+    background:var(--panel); border:1px solid var(--hairline); border-radius:10px;
+    padding:14px 16px; display:none;
+  }
+  .req-panel.show{display:block}
+  .req-panel-head{display:flex; align-items:center; gap:8px; margin-bottom:8px}
+  .req-panel-head .tag{
+    font-family:var(--mono); font-size:10px; color:var(--text-dim); background:var(--panel-2);
+    border:1px solid var(--hairline); border-radius:4px; padding:2px 6px;
+  }
+  .req-panel pre{
+    margin:0; font-family:var(--mono); font-size:11.5px; color:var(--text-dim);
+    white-space:pre-wrap; word-break:break-all; line-height:1.6;
+  }
+  .req-panel .timing{font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-top:8px}
+
+  .decision-card{
+    background:var(--panel); border:1px solid var(--hairline); border-radius:14px;
+    padding:26px; display:none; opacity:0; transform:translateY(6px);
+    transition:opacity .35s ease, transform .35s ease;
+  }
+  .decision-card.show{display:block}
+  .decision-card.in{opacity:1; transform:translateY(0)}
+
+  .decision-top{display:flex; align-items:center; gap:22px; flex-wrap:wrap}
+  .badge{
+    font-family:var(--mono); font-weight:700; font-size:22px; letter-spacing:.03em;
+    padding:10px 20px; border-radius:10px; display:inline-block;
+  }
+  .badge.ALLOW{background:var(--allow-dim); color:var(--allow); box-shadow:inset 0 0 0 1px var(--allow)}
+  .badge.WARN{background:var(--warn-dim); color:var(--warn); box-shadow:inset 0 0 0 1px var(--warn)}
+  .badge.BLOCK{background:var(--block-dim); color:var(--block); box-shadow:inset 0 0 0 1px var(--block)}
+
+  .gauge-wrap{display:flex; align-items:center; gap:14px; margin-left:auto}
+  .gauge-num{font-family:var(--mono); text-align:right}
+  .gauge-num .val{font-size:26px; font-weight:700}
+  .gauge-num .lbl{font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em}
+
+  .explanation{margin-top:20px; display:flex; flex-direction:column; gap:6px}
+  .explanation .line{
+    font-size:13px; color:var(--text); padding:9px 12px; background:var(--panel-2);
+    border-left:2px solid var(--hairline); border-radius:0 6px 6px 0; line-height:1.45;
+  }
+
+  .section-label{
+    font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint);
+    margin:20px 0 10px;
+  }
+  .signals{display:flex; flex-direction:column; gap:6px}
+  .signal-row{
+    display:grid; grid-template-columns:1fr 60px 90px; gap:10px; align-items:center;
+    padding:8px 12px; background:var(--panel-2); border-radius:6px; font-family:var(--mono); font-size:11.5px;
+  }
+  .signal-name{color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .signal-name .src{color:var(--text-faint)}
+  .signal-score{text-align:right}
+  .signal-bar{height:4px; border-radius:2px; background:var(--hairline); position:relative; overflow:hidden}
+  .signal-bar i{position:absolute; inset:0 auto 0 0; border-radius:2px}
+
+  .violations{display:flex; flex-direction:column; gap:6px}
+  .violation{
+    font-family:var(--mono); font-size:11.5px; padding:9px 12px; border-radius:6px;
+    display:flex; gap:10px; align-items:flex-start; background:var(--panel-2);
+  }
+  .violation .sev{font-weight:700; flex-shrink:0}
+  .violation.BLOCK .sev{color:var(--block)}
+  .violation.WARN .sev{color:var(--warn)}
+
+  .feed{background:var(--panel); border:1px solid var(--hairline); border-radius:10px; overflow:hidden}
+  .feed-head{
+    padding:10px 16px; border-bottom:1px solid var(--hairline); font-size:11px;
+    text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint);
+  }
+  .feed-row{
+    display:grid; grid-template-columns:70px 1fr 90px 60px; gap:12px; align-items:center;
+    padding:10px 16px; border-bottom:1px solid var(--hairline); font-family:var(--mono); font-size:12px;
+    animation:rowIn .3s ease;
+  }
+  .feed-row:last-child{border-bottom:none}
+  @keyframes rowIn{from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:translateY(0)}}
+  .feed-dec{font-weight:700}
+  .feed-dec.ALLOW{color:var(--allow)}
+  .feed-dec.WARN{color:var(--warn)}
+  .feed-dec.BLOCK{color:var(--block)}
+  .feed-desc{color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .feed-score{color:var(--text-faint); text-align:right}
+  .feed-time{color:var(--text-faint); text-align:right; font-size:10.5px}
+
+  .error-banner{
+    background:var(--block-dim); border:1px solid var(--block); border-radius:10px;
+    padding:16px 18px; color:var(--text); display:none; font-size:13px; line-height:1.6;
+  }
+  .error-banner.show{display:block}
+  .error-banner code{
+    background:rgba(0,0,0,.3); padding:1px 6px; border-radius:4px; font-family:var(--mono); font-size:12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="boot" id="boot">
+  <div>
+    <div class="boot-line">guardian.core — decision engine</div>
+    <div class="boot-line">establishing console session…</div>
+    <div class="boot-line">ready.</div>
+  </div>
+</div>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5l8-3z" stroke="#2fe6a8" stroke-width="1.6"/><path d="M9 12l2 2 4-4.5" stroke="#2fe6a8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div>
+    <h1>Guardian — Live Decision Console</h1>
+    <div class="sub">Every call below hits a real, running decision engine — not scripted responses</div>
+  </div>
+  <div class="conn">
+    <span class="conn-dot" id="connDot"></span>
+    <span class="conn-label" id="connLabel">not connected</span>
+  </div>
+</header>
+
+<div class="config">
+  <label>API</label>
+  <input id="apiUrl" value="http://localhost:8000" spellcheck="false">
+  <label>Key (optional)</label>
+  <input id="apiKey" placeholder="Bearer token" spellcheck="false">
+  <button class="btn-test" id="btnTest">test connection</button>
+</div>
+
+<main>
+  <div class="rail">
+    <h2>Scenarios</h2>
+    <button class="scenario" data-scenario="safe">
+      <div class="sc-name"><span class="sc-dot allow"></span>Established agent, small swap</div>
+      <div class="sc-desc">Known agent, routine ETH → USDC, well within limits</div>
+    </button>
+    <button class="scenario" data-scenario="unknown">
+      <div class="sc-name"><span class="sc-dot warn"></span>New agent, obscure token</div>
+      <div class="sc-desc">No history yet, swapping into an untracked token</div>
+    </button>
+    <button class="scenario" data-scenario="unlimited">
+      <div class="sc-name"><span class="sc-dot warn"></span>Unusually large approval</div>
+      <div class="sc-desc">approve() far above policy limits — WARN by default; set <code style="color:#4a525f">GUARDIAN_SIMULATION_PROVIDER=rpc</code> to see a real on-chain-confirmed unlimited approval get BLOCKed instead</div>
+    </button>
+    <button class="scenario" data-scenario="malicious">
+      <div class="sc-name"><span class="sc-dot block"></span>Large transfer, unverified agent</div>
+      <div class="sc-desc">No track record, moving a large amount to an unknown address</div>
+    </button>
+
+    <div class="custom-toggle" id="customToggle">▸ Build a custom intent</div>
+    <div class="custom-form" id="customForm">
+      <label>Agent ID</label>
+      <input id="cAgent" value="my-test-agent">
+      <label>Wallet</label>
+      <input id="cWallet" value="0x1111111111111111111111111111111111aaaa">
+      <label>Chain</label>
+      <input id="cChain" value="ethereum">
+      <label>Action</label>
+      <select id="cAction">
+        <option value="swap">swap</option>
+        <option value="transfer">transfer</option>
+        <option value="approve">approve</option>
+        <option value="bridge">bridge</option>
+      </select>
+      <label>Amount</label>
+      <input id="cAmount" value="10" type="number">
+      <label>Target / recipient</label>
+      <input id="cTarget" value="0x9999999999999999999999999999999999ffff">
+      <button id="btnCustom">Send to /decision</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="error-banner" id="errorBanner"></div>
+
+    <div class="empty-state" id="emptyState">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5l8-3z" stroke="currentColor" stroke-width="1.3"/></svg>
+      <div>Pick a scenario, or build your own intent —<br>this calls your real Guardian instance's <code style="color:#7b8496">/decision</code> endpoint.</div>
+    </div>
+
+    <div class="req-panel" id="reqPanel">
+      <div class="req-panel-head"><span class="tag">POST /decision</span><span class="tag" id="reqAgent"></span></div>
+      <pre id="reqBody"></pre>
+      <div class="timing" id="reqTiming"></div>
+    </div>
+
+    <div class="decision-card" id="decisionCard">
+      <div class="decision-top">
+        <span class="badge" id="badge">—</span>
+        <div class="gauge-wrap">
+          <svg width="72" height="72" viewBox="0 0 100 100" id="gaugeSvg">
+            <circle cx="50" cy="50" r="42" fill="none" stroke="#232935" stroke-width="8"/>
+            <circle cx="50" cy="50" r="42" fill="none" stroke-width="8" stroke-linecap="round"
+                    id="gaugeArc" stroke-dasharray="264" stroke-dashoffset="264"
+                    transform="rotate(-90 50 50)"/>
+          </svg>
+          <div class="gauge-num">
+            <div class="val" id="riskVal">0</div>
+            <div class="lbl">risk score</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="explanation" id="explanation"></div>
+
+      <div class="section-label" id="signalsLabel" style="display:none">Signals</div>
+      <div class="signals" id="signals"></div>
+
+      <div class="section-label" id="violationsLabel" style="display:none">Policy violations</div>
+      <div class="violations" id="violations"></div>
+    </div>
+
+    <div class="feed" id="feedWrap" style="display:none">
+      <div class="feed-head">Session log</div>
+      <div id="feed"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+setTimeout(() => $('boot').classList.add('hide'), 900);
+
+const SCENARIOS = {
+  safe: {
+    agent_id: 'trading-agent-001', wallet: '0x1111111111111111111111111111111111aaaa',
+    chain: 'ethereum', action_type: 'swap', from_token: 'ETH', to_token: 'USDC', amount: 5,
+  },
+  unknown: {
+    agent_id: 'new-agent-777', wallet: '0x2222222222222222222222222222222222bbbb',
+    chain: 'ethereum', action_type: 'swap', from_token: 'ETH', to_token: 'PEPE2', amount: 3,
+  },
+  unlimited: {
+    agent_id: 'trading-agent-001', wallet: '0x1111111111111111111111111111111111aaaa',
+    chain: 'ethereum', action_type: 'approve', from_token: 'USDC',
+    target: '0x5555555555555555555555555555555555eeee', amount: 115792089237316195423570985008687907853269984665640564039457584007913129639935,
+  },
+  malicious: {
+    agent_id: 'unverified-agent-x', wallet: '0x3333333333333333333333333333333333cccc',
+    chain: 'ethereum', action_type: 'transfer',
+    target: '0x4444444444444444444444444444444444dddd', amount: 500,
+  },
+};
+
+let connected = false;
+
+function apiBase() { return $('apiUrl').value.replace(/\/$/, ''); }
+function authHeaders() {
+  const key = $('apiKey').value.trim();
+  return key ? { 'Authorization': 'Bearer ' + key } : {};
+}
+
+async function testConnection() {
+  $('connLabel').textContent = 'checking…';
+  try {
+    const res = await fetch(apiBase() + '/health');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    connected = true;
+    $('connDot').className = 'conn-dot live';
+    $('connLabel').textContent = 'connected — ' + apiBase();
+    hideError();
+  } catch (e) {
+    connected = false;
+    $('connDot').className = 'conn-dot down';
+    $('connLabel').textContent = 'not reachable';
+    showError(
+      `Can't reach <code>${apiBase()}</code>. Run Guardian locally first:<br><br>` +
+      `<code>GUARDIAN_ENABLE_CORS_FOR_BROWSER_DEMO=true uvicorn api.main:app --reload</code><br><br>` +
+      `Then click "test connection" again. (If it's running but you still see this, the browser is likely blocking ` +
+      `the cross-origin request — CORS must be enabled with the env var above.)`
+    );
+  }
+}
+$('btnTest').addEventListener('click', testConnection);
+testConnection();
+
+function showError(html) { $('errorBanner').innerHTML = html; $('errorBanner').classList.add('show'); }
+function hideError() { $('errorBanner').classList.remove('show'); }
+
+$('customToggle').addEventListener('click', () => {
+  const open = $('customForm').classList.toggle('open');
+  $('customToggle').textContent = (open ? '▾' : '▸') + ' Build a custom intent';
+});
+
+document.querySelectorAll('.scenario').forEach(btn => {
+  btn.addEventListener('click', () => runIntent(SCENARIOS[btn.dataset.scenario]));
+});
+
+$('btnCustom').addEventListener('click', () => {
+  runIntent({
+    agent_id: $('cAgent').value, wallet: $('cWallet').value, chain: $('cChain').value,
+    action_type: $('cAction').value, amount: parseFloat($('cAmount').value) || 0,
+    target: $('cTarget').value,
+  });
+});
+
+let feedCount = 0;
+
+async function runIntent(intent) {
+  $('emptyState').style.display = 'none';
+  hideError();
+
+  $('reqPanel').classList.add('show');
+  $('reqAgent').textContent = intent.agent_id;
+  $('reqBody').textContent = JSON.stringify(intent, null, 2);
+  $('reqTiming').textContent = 'sending…';
+
+  $('decisionCard').classList.remove('in');
+
+  const start = performance.now();
+  let data, ok = true;
+  try {
+    const res = await fetch(apiBase() + '/decision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(intent),
+    });
+    const elapsed = (performance.now() - start).toFixed(0);
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+    }
+    data = await res.json();
+    $('reqTiming').textContent = `→ ${res.status} in ${elapsed}ms`;
+  } catch (e) {
+    ok = false;
+    $('reqTiming').textContent = 'failed';
+    showError(`Request failed: <code>${e.message}</code>. Is Guardian running with CORS enabled?`);
+    connected = false;
+    $('connDot').className = 'conn-dot down';
+    return;
+  }
+
+  renderDecision(data);
+  addToFeed(intent, data);
+}
+
+function colorForDecision(d) {
+  return d === 'ALLOW' ? getCss('--allow') : d === 'WARN' ? getCss('--warn') : getCss('--block');
+}
+function getCss(varName) { return getComputedStyle(document.documentElement).getPropertyValue(varName).trim(); }
+
+function renderDecision(data) {
+  $('decisionCard').classList.add('show');
+  $('badge').textContent = data.decision;
+  $('badge').className = 'badge ' + data.decision;
+
+  // gauge: circumference for r=42 is 2*pi*42 ≈ 263.9
+  const circ = 263.9;
+  const pct = Math.max(0, Math.min(100, data.risk_score)) / 100;
+  const offset = circ - pct * circ;
+  const arc = $('gaugeArc');
+  arc.style.stroke = colorForDecision(data.decision);
+  requestAnimationFrame(() => {
+    arc.style.transition = 'stroke-dashoffset .7s cubic-bezier(.2,.8,.2,1), stroke .3s';
+    arc.setAttribute('stroke-dashoffset', offset.toFixed(1));
+  });
+  $('riskVal').textContent = data.risk_score.toFixed(1);
+  $('riskVal').style.color = colorForDecision(data.decision);
+
+  $('explanation').innerHTML = (data.explanation || []).map(line =>
+    `<div class="line">${escapeHtml(line)}</div>`
+  ).join('') || '<div class="line">No explanation returned.</div>';
+
+  const signalsEl = $('signals');
+  if (data.signals && data.signals.length) {
+    $('signalsLabel').style.display = 'block';
+    signalsEl.innerHTML = data.signals.map(s => {
+      const pct = Math.max(0, Math.min(100, s.score));
+      const barColor = pct >= 70 ? getCss('--block') : pct >= 35 ? getCss('--warn') : getCss('--allow');
+      return `<div class="signal-row">
+        <div class="signal-name"><span class="src">${escapeHtml(s.source)}/</span>${escapeHtml(s.name)}</div>
+        <div class="signal-score">${s.score.toFixed(0)}</div>
+        <div class="signal-bar"><i style="width:${pct}%; background:${barColor}"></i></div>
+      </div>`;
+    }).join('');
+  } else {
+    $('signalsLabel').style.display = 'none';
+    signalsEl.innerHTML = '';
+  }
+
+  const violEl = $('violations');
+  if (data.policy_violations && data.policy_violations.length) {
+    $('violationsLabel').style.display = 'block';
+    violEl.innerHTML = data.policy_violations.map(v =>
+      `<div class="violation ${v.severity}"><span class="sev">${v.severity}</span><span>${escapeHtml(v.rule)}: ${escapeHtml(v.message)}</span></div>`
+    ).join('');
+  } else {
+    $('violationsLabel').style.display = 'none';
+    violEl.innerHTML = '';
+  }
+
+  requestAnimationFrame(() => $('decisionCard').classList.add('in'));
+}
+
+function addToFeed(intent, data) {
+  feedCount++;
+  $('feedWrap').style.display = 'block';
+  const row = document.createElement('div');
+  row.className = 'feed-row';
+  const time = new Date().toLocaleTimeString();
+  row.innerHTML = `
+    <div class="feed-dec ${data.decision}">${data.decision}</div>
+    <div class="feed-desc">${escapeHtml(intent.agent_id)} · ${escapeHtml(intent.action_type)} · ${escapeHtml(String(intent.chain))}</div>
+    <div class="feed-score">risk ${data.risk_score.toFixed(1)}</div>
+    <div class="feed-time">${time}</div>
+  `;
+  $('feed').prepend(row);
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

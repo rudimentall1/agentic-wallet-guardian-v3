@@ -16,6 +16,16 @@ It runs on your own infrastructure, using your own policy rules and your
 own reputation data - see [Why self-hosted](#why-self-hosted) for why that
 matters and how this differs from calling a hosted security API directly.
 
+**See it decide, live:** run the API locally (`GUARDIAN_ENABLE_CORS_FOR_BROWSER_DEMO=true
+uvicorn api.main:app --reload`), then open [`examples/browser-demo.html`](examples/browser-demo.html)
+in a browser - no build step, no server for the page itself. Every
+scenario button sends a real `POST /decision` to your running instance
+and renders the actual response (risk score, every signal that fed into
+it, every policy rule that fired) - nothing in the page is scripted or
+faked. `GUARDIAN_ENABLE_CORS_FOR_BROWSER_DEMO` is off by default (see
+`guardian/config.py`) since it's specifically for this local-demo case,
+not something to leave on for a real deployment.
+
 ---
 
 ## Why self-hosted

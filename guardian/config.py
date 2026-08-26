@@ -149,6 +149,17 @@ class GuardianConfig:
     rate_limit_per_minute: int = field(
         default_factory=lambda: int(os.environ.get("GUARDIAN_RATE_LIMIT_PER_MINUTE", "60"))
     )
+    # Off by default: a browser page fetching a self-hosted instance
+    # (e.g. examples/browser-demo.html running against your own
+    # localhost:8000) needs CORS headers to do so at all - browsers
+    # block cross-origin fetches without them, regardless of API-key
+    # auth. This is meant for exactly that local-demo case, not for
+    # exposing a production instance to arbitrary origins; leave it off
+    # unless you know you want any web page to be able to call this API
+    # from a user's browser.
+    enable_cors_for_browser_demo: bool = field(
+        default_factory=lambda: _bool("GUARDIAN_ENABLE_CORS_FOR_BROWSER_DEMO", False)
+    )
 
     @property
     def auth_enabled(self) -> bool:

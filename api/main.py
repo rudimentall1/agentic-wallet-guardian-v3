@@ -51,6 +51,28 @@ engine = DecisionEngine(config=config)
 require_api_key = make_api_key_dependency(config)
 app.add_middleware(RateLimitMiddleware, limit_per_minute=config.rate_limit_per_minute)
 
+if config.enable_cors_for_browser_demo:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    # allow_origins=["*"] is deliberate here, not an oversight: this flag
+    # exists specifically so a local browser demo (any static HTML page,
+    # served from any origin - file://, a local dev server, claude.ai's
+    # artifact sandbox) can call this instance directly. Scoping it to
+    # one origin would defeat that purpose without adding real security,
+    # since this is explicitly opt-in and documented as being for local
+    # demo use - the actual access control is still whatever
+    # GUARDIAN_API_KEY/GUARDIAN_AGENT_API_KEYS you have configured
+    # separately; this only affects whether a browser is allowed to read
+    # the response, not who can authenticate.
+    app.add_middleware(
+        CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"],
+    )
+    logger.warning(
+        "GUARDIAN_ENABLE_CORS_FOR_BROWSER_DEMO is set - any web page can call this "
+        "instance's API from a browser. Fine for a local demo; turn this off for any "
+        "deployment reachable beyond your own machine."
+    )
+
 if not config.auth_enabled:
     logger.warning(
         "GUARDIAN_API_KEY is not set - /decision and /agents/*/history are running "
