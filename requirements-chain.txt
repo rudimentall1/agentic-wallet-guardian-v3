@@ -1,7 +1,16 @@
 # Optional: only needed if GUARDIAN_WALLET_PROVIDER=rpc (real on-chain data
-# via direct JSON-RPC). The mock provider and the Blockscout/DexScreener
+# via direct JSON-RPC), or for guardian/onchain_attestation.py (signing
+# attestations for the GuardianValidator ERC-7579 module - see that
+# module's docstring). The mock provider and the Blockscout/DexScreener
 # providers only need requirements.txt - this stays separate so the base
 # install remains small if you don't need direct RPC access.
 #
 #   pip install -r requirements.txt -r requirements-chain.txt
 web3==7.4.0
+# eth-account and eth-abi are pulled in transitively by web3, but
+# onchain_attestation.py imports them directly (EIP-712 signing, ABI
+# encoding for the on-chain signature format) - pinned explicitly here
+# rather than relying on whatever version web3 happens to transitively
+# resolve to.
+eth-account==0.14.0
+eth-abi==6.0.0

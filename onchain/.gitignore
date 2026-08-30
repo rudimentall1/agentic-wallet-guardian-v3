@@ -1,0 +1,9 @@
+# Foundry build artifacts and dependencies - not committed.
+# Dependencies are re-fetched via `forge install` (see README.md in this
+# directory for the exact commands) rather than committed as nested git
+# checkouts, which is the standard Foundry project layout.
+lib/
+out/
+cache/
+broadcast/
+.env

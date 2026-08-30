@@ -417,6 +417,26 @@ python skills/guardian-check/scripts/check.py \
 
 ---
 
+## From advisory to enforced: GuardianValidator
+
+Everything above is advisory - Guardian tells you ALLOW/WARN/BLOCK, but
+the caller still has to *choose* to respect that. [`onchain/`](onchain/)
+is a real ERC-7579 validator module for ERC-4337 smart accounts that
+closes that gap: once installed, the account's UserOperations only ever
+reach the chain if a trusted Guardian signer attested, for that *exact*
+operation, that the decision was ALLOW - not something an agent can skip
+asking or ignore the answer to. See [`onchain/README.md`](onchain/README.md)
+for why it needs a second, EVM-native signature format alongside OAA
+(Ed25519 has no EVM precompile and costs ~2,000,000 gas to verify in pure
+Solidity; this module's entire `validateUserOp` costs 27k-59k gas), what's
+deliberately out of scope (WARN never passes on-chain; no professional
+audit yet), and how to build, test, and deploy it - including a test that
+verifies a signature produced by real, running Python
+(`guardian/onchain_attestation.py`) is accepted by the real Solidity
+contract, not two implementations that only agree with themselves.
+
+---
+
 ## Roadmap
 
 1. ~~Replace the mock wallet/token/contract analyzers with real data
@@ -470,9 +490,17 @@ python skills/guardian-check/scripts/check.py \
    and nothing changes; an operator can grant a specific agent a scoped
    capability (allowed action types, allowed chains, per-action and
    daily spending caps, an expiry) with zero private-key material
-   involved. Agents with no grant are unaffected. Real key management
-   (session keys, account abstraction) remains deliberately out of
-   scope - a categorically higher-stakes problem.
+   involved. Agents with no grant are unaffected. This module still
+   never touches private keys or session-key issuance itself - that
+   remains out of scope, a categorically higher-stakes problem. ~~Real
+   enforcement of a decision (vs. an agent choosing to respect it)
+   remains deliberately out of scope.~~ Partially done -
+   [`onchain/`](onchain/)'s `GuardianValidator` is an ERC-7579 module
+   that makes a decision genuinely unbypassable for any ERC-4337 smart
+   account that installs it, without Guardian ever holding a key. It
+   does not manage session keys, custody, or account creation - it
+   only gates execution behind an attestation - so this is a real,
+   load-bearing piece of "account abstraction," not the whole of it.
 9. ~~Verify declared intent against decoded simulation results.~~
    Done - `guardian/decision/intent_verification.py` catches
    the case where an agent declares one amount but the actual calldata
