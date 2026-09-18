@@ -348,6 +348,7 @@ Guardian 3.2 adds a small, non-custodial Arc mainnet surface for autonomous USDC
 - Guardian runs the normal hard-rules, intelligence, simulation, policy and risk pipeline before it releases a transaction
 - the demo policy caps autonomous payments at 5 USDC and blocks approve/swap/bridge/contract-call actions on this surface
 - only an `ALLOW` decision produces a signable transaction; the browser wallet remains the only signer
+- the public demo keeps one bounded history identity (`arc-demo-agent`) so visitor traffic cannot create unbounded per-agent memory keys
 - open `/arc` on a running instance to connect a wallet, ask Guardian, and sign the resulting Arc payment
 
 Manual Arc verification:

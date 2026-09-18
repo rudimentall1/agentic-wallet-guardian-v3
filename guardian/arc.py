@@ -23,6 +23,7 @@ ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000"
 ARC_USDC_DECIMALS = 6
 ARC_NATIVE_DECIMALS = 18
 ARC_GAS_FLOOR_WEI = 20_000_000_000
+ARC_DEMO_AGENT_ID = "arc-demo-agent"
 
 # Microgrant demo policy: autonomous agents can make small USDC payments,
 # while contract approvals/swaps/bridges are outside this payment surface.

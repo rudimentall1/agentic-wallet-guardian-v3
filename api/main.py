@@ -28,7 +28,7 @@ from guardian.config import get_config
 from guardian.core.intent import ActionIntent
 from guardian.decision.engine import DecisionEngine
 from guardian.decision.rules import SUPPORTED_CHAINS
-from guardian.arc import ARC_CHAIN, ARC_CHAIN_ID, ARC_EXPLORER_URL, ARC_USDC_ADDRESS, build_arc_engine, prepare_arc_payment, arc_network_status
+from guardian.arc import ARC_CHAIN, ARC_CHAIN_ID, ARC_EXPLORER_URL, ARC_USDC_ADDRESS, ARC_DEMO_AGENT_ID, build_arc_engine, prepare_arc_payment, arc_network_status
 
 logger = logging.getLogger("guardian.api")
 
@@ -122,7 +122,9 @@ def decide(payload: DecisionRequest, authorization: Optional[str] = Header(defau
     # check as before when no per-agent keys are configured.
     check_agent_bound_key(authorization, payload.agent_id, config)
     intent = ActionIntent(
-        agent_id=payload.agent_id,
+        # Public demo traffic shares one bounded history key so arbitrary
+        # caller-supplied agent IDs cannot create unbounded SQLite keys.
+        agent_id=ARC_DEMO_AGENT_ID,
         wallet=payload.wallet,
         chain=payload.chain,
         action_type=payload.action_type,
