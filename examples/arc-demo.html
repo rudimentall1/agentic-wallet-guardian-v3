@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agentic Wallet Guardian ? Arc</title>
+  <title>Agentic Wallet Guardian - Arc</title>
   <style>
     body { font-family: Inter, system-ui, sans-serif; max-width: 980px; margin: 40px auto; padding: 0 20px; background: #0e1116; color: #f4f6f8; }
     .card { background: #171b22; border: 1px solid #2b313b; border-radius: 16px; padding: 22px; margin: 16px 0; }
@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>Agentic Wallet Guardian ? Arc</h1>
+  <h1>Agentic Wallet Guardian - Arc</h1>
   <p>Non-custodial Arc USDC payment gate. The browser asks Guardian first. Only an <b>ALLOW</b> decision produces a signable transaction.</p>
 
   <div class="card">
@@ -41,7 +41,7 @@
 
   <div class="card">
     <b>What Guardian enforces here</b>
-    <p><small>Arc mainnet only ? USDC ERC-20 interface ? max payment 5 USDC ? real RPC simulation ? real calldata ? browser wallet remains the signer.</small></p>
+    <p><small>Arc mainnet only - USDC ERC-20 interface - max payment 5 USDC - real RPC simulation - real calldata - browser wallet remains the signer.</small></p>
   </div>
 
 <script>
@@ -56,6 +56,28 @@ const ARC_CHAIN = {
 let account = null;
 let prepared = null;
 const $ = id => document.getElementById(id);
+
+// crypto.randomUUID() is unavailable on non-HTTPS origins. Keep the demo
+// compatible with the public HTTP deployment while retaining cryptographic
+// randomness through getRandomValues().
+if (window.crypto && !window.crypto.randomUUID && window.crypto.getRandomValues) {
+  try {
+    Object.defineProperty(window.crypto, 'randomUUID', {
+      configurable: true,
+      value: () => {
+        const b = new Uint8Array(16);
+        window.crypto.getRandomValues(b);
+        b[6] = (b[6] & 0x0f) | 0x40;
+        b[8] = (b[8] & 0x3f) | 0x80;
+        const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+        return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+      }
+    });
+  } catch (_) {
+    // Some browsers expose Crypto as non-extensible. The app itself does not
+    // call randomUUID; this fallback is only for injected wallet code.
+  }
+}
 
 async function switchArc() {
   try {
@@ -81,7 +103,7 @@ async function askGuardian() {
   const amount = Number($('amount').value);
   const recipient = $('recipient').value.trim();
   $('send').disabled = true;
-  $('result').textContent = 'Guardian evaluating?';
+  $('result').textContent = 'Guardian evaluating...';
   prepared = await fetch('/arc/prepare', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
@@ -90,7 +112,7 @@ async function askGuardian() {
     })
   }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || JSON.stringify(j)); return j; });
   const d = prepared.decision;
-  $('decision').innerHTML = `<b class="${d.decision.toLowerCase()}">${d.decision}</b> ? risk ${d.risk_score?.toFixed?.(1) ?? d.risk_score} ? confidence ${d.confidence?.toFixed?.(2) ?? d.confidence}\n${(d.explanation||[]).join('\n')}`;
+  $('decision').innerHTML = `<b class="${d.decision.toLowerCase()}">${d.decision}</b> - risk ${d.risk_score?.toFixed?.(1) ?? d.risk_score} - confidence ${d.confidence?.toFixed?.(2) ?? d.confidence}\n${(d.explanation||[]).join('\n')}`;
   if (prepared.transaction_ready) {
     $('send').disabled = false;
     $('result').textContent = 'Transaction prepared. Guardian allowed it; only your wallet can sign it.';
