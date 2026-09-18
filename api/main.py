@@ -122,9 +122,7 @@ def decide(payload: DecisionRequest, authorization: Optional[str] = Header(defau
     # check as before when no per-agent keys are configured.
     check_agent_bound_key(authorization, payload.agent_id, config)
     intent = ActionIntent(
-        # Public demo traffic shares one bounded history key so arbitrary
-        # caller-supplied agent IDs cannot create unbounded SQLite keys.
-        agent_id=ARC_DEMO_AGENT_ID,
+        agent_id=payload.agent_id,
         wallet=payload.wallet,
         chain=payload.chain,
         action_type=payload.action_type,
@@ -161,7 +159,9 @@ def arc_prepare(payload: DecisionRequest):
         raise HTTPException(422, "wallet and target are required.")
 
     intent = ActionIntent(
-        agent_id=payload.agent_id,
+        # Public demo traffic shares one bounded history key so arbitrary
+        # caller-supplied agent IDs cannot create unbounded SQLite keys.
+        agent_id=ARC_DEMO_AGENT_ID,
         wallet=payload.wallet,
         chain=ARC_CHAIN,
         action_type="transfer",
