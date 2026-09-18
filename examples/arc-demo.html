@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentic Wallet Guardian ? Arc</title>
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; max-width: 980px; margin: 40px auto; padding: 0 20px; background: #0e1116; color: #f4f6f8; }
+    .card { background: #171b22; border: 1px solid #2b313b; border-radius: 16px; padding: 22px; margin: 16px 0; }
+    input, button { font: inherit; padding: 11px 13px; border-radius: 10px; border: 1px solid #39404c; background: #0f1319; color: #fff; }
+    input { width: 100%; box-sizing: border-box; margin-top: 6px; }
+    button { cursor: pointer; margin: 8px 8px 0 0; background: #252c37; }
+    button.primary { background: #365df5; border-color: #365df5; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+    .allow { color: #67e8a5; } .block { color: #ff7b7b; } .warn { color: #ffd166; }
+    small { color: #9ba4b2; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>Agentic Wallet Guardian ? Arc</h1>
+  <p>Non-custodial Arc USDC payment gate. The browser asks Guardian first. Only an <b>ALLOW</b> decision produces a signable transaction.</p>
+
+  <div class="card">
+    <button class="primary" id="connect">Connect Arc wallet</button>
+    <span id="wallet"></span>
+    <div id="status" class="mono" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <label>Recipient<input id="recipient" value="0x000000000000000000000000000000000000dEaD"></label>
+      <label>Amount (USDC)<input id="amount" type="number" min="0.01" step="0.01" value="0.25"></label>
+    </div>
+    <button class="primary" id="check">Ask Guardian</button>
+    <button id="send" disabled>Sign & send</button>
+    <div id="decision" style="margin-top:16px" class="mono"></div>
+    <div id="result" style="margin-top:16px" class="mono"></div>
+  </div>
+
+  <div class="card">
+    <b>What Guardian enforces here</b>
+    <p><small>Arc mainnet only ? USDC ERC-20 interface ? max payment 5 USDC ? real RPC simulation ? real calldata ? browser wallet remains the signer.</small></p>
+  </div>
+
+<script>
+const ARC_CHAIN_ID = '0x13b2';
+const ARC_CHAIN = {
+  chainId: ARC_CHAIN_ID,
+  chainName: 'Arc',
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  rpcUrls: ['https://rpc.mainnet.arc.io'],
+  blockExplorerUrls: ['https://explorer.arc.io']
+};
+let account = null;
+let prepared = null;
+const $ = id => document.getElementById(id);
+
+async function switchArc() {
+  try {
+    await ethereum.request({ method:'wallet_switchEthereumChain', params:[{chainId: ARC_CHAIN_ID}] });
+  } catch (e) {
+    if (e.code === 4902) await ethereum.request({ method:'wallet_addEthereumChain', params:[ARC_CHAIN] });
+    else throw e;
+  }
+}
+
+async function connect() {
+  if (!window.ethereum) throw new Error('No EIP-1193 wallet found. Install MetaMask/Rabby/Coinbase Wallet.');
+  await switchArc();
+  const accounts = await ethereum.request({ method:'eth_requestAccounts' });
+  account = accounts[0];
+  $('wallet').textContent = account;
+  const s = await fetch('/arc/status').then(r => r.json());
+  $('status').textContent = `Arc chain=${s.arc.chain_id} block=${s.arc.block_number} gas=${s.arc.gas_price_gwei.toFixed(3)} gwei`;
+}
+
+async function askGuardian() {
+  if (!account) await connect();
+  const amount = Number($('amount').value);
+  const recipient = $('recipient').value.trim();
+  $('send').disabled = true;
+  $('result').textContent = 'Guardian evaluating?';
+  prepared = await fetch('/arc/prepare', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      agent_id:'arc-demo-agent', wallet:account, chain:'arc', action_type:'transfer',
+      target:recipient, from_token:'0x3600000000000000000000000000000000000000', amount:amount, metadata:{}
+    })
+  }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.detail || JSON.stringify(j)); return j; });
+  const d = prepared.decision;
+  $('decision').innerHTML = `<b class="${d.decision.toLowerCase()}">${d.decision}</b> ? risk ${d.risk_score?.toFixed?.(1) ?? d.risk_score} ? confidence ${d.confidence?.toFixed?.(2) ?? d.confidence}\n${(d.explanation||[]).join('\n')}`;
+  if (prepared.transaction_ready) {
+    $('send').disabled = false;
+    $('result').textContent = 'Transaction prepared. Guardian allowed it; only your wallet can sign it.';
+  } else {
+    $('result').textContent = 'No executable transaction was released.';
+  }
+}
+
+async function send() {
+  if (!prepared?.transaction_ready) return;
+  const tx = prepared.transaction;
+  const hash = await ethereum.request({ method:'eth_sendTransaction', params:[{
+    from: tx.from, to: tx.to, data: tx.data, value: tx.value,
+    gas: tx.gas, maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas
+  }]});
+  $('send').disabled = true;
+  $('result').innerHTML = `Broadcast: ${hash}\n<a href="https://explorer.arc.io/tx/${hash}" target="_blank">Open Arc Explorer</a>`;
+}
+
+$('connect').onclick = () => connect().catch(e => $('status').textContent = e.message);
+$('check').onclick = () => askGuardian().catch(e => $('result').textContent = e.message);
+$('send').onclick = () => send().catch(e => $('result').textContent = e.message);
+</script>
+</body>
+</html>

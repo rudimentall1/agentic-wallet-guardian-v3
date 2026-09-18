@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -47,7 +48,7 @@ class SQLiteStorage:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 key TEXT NOT NULL,
                 value TEXT NOT NULL,
-                created_at REAL DEFAULT (unixepoch('now', 'subsec'))
+                created_at REAL DEFAULT 0
             )
             """
         )
@@ -56,9 +57,12 @@ class SQLiteStorage:
 
     def append(self, key: str, value: dict) -> None:
         with self._lock:
+            # Supply the timestamp from Python instead of relying on a
+            # SQLite-version-specific date function in the schema default.
+            # Some supported runtimes ship SQLite without unixepoch().
             self._conn.execute(
-                "INSERT INTO history (key, value) VALUES (?, ?)",
-                (key, json.dumps(value)),
+                "INSERT INTO history (key, value, created_at) VALUES (?, ?, ?)",
+                (key, json.dumps(value), time.time()),
             )
             # Trim this key back down to max_rows_per_key, oldest rows
             # first. Runs on every write rather than periodically -

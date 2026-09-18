@@ -10,7 +10,7 @@ from typing import List
 from guardian.core.intent import ActionIntent
 from guardian.core.models import PolicyViolation
 
-SUPPORTED_CHAINS = {"ethereum", "base", "arbitrum", "optimism", "polygon", "solana", "botchain"}
+SUPPORTED_CHAINS = {"ethereum", "base", "arbitrum", "optimism", "polygon", "solana", "botchain", "arc"}
 
 
 def evaluate_hard_rules(intent: ActionIntent) -> List[PolicyViolation]:

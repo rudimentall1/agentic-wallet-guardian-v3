@@ -338,17 +338,38 @@ point your MCP client at `python mcp_server.py`.
 
 ---
 
+
+## Arc mainnet payment demo
+
+Guardian 3.2 adds a small, non-custodial Arc mainnet surface for autonomous USDC payments.
+
+- Arc mainnet, chain ID 5042, official RPC `https://rpc.mainnet.arc.io`
+- Arc USDC ERC-20 interface `0x3600000000000000000000000000000000000000` (6 decimals)
+- Guardian runs the normal hard-rules, intelligence, simulation, policy and risk pipeline before it releases a transaction
+- the demo policy caps autonomous payments at 5 USDC and blocks approve/swap/bridge/contract-call actions on this surface
+- only an `ALLOW` decision produces a signable transaction; the browser wallet remains the only signer
+- open `/arc` on a running instance to connect a wallet, ask Guardian, and sign the resulting Arc payment
+
+Manual Arc verification:
+
+```bash
+python scripts/verify_arc_mainnet.py
+```
+
+The script checks chain ID, live block height, gas price and the mainnet USDC `decimals()` call. It does not require a private key.
+
 ## Running the tests
 
 ```bash
-pip install -r requirements.txt -r requirements-chain.txt
+pip install -r requirements.txt -r requirements-chain.txt -r requirements-mcp.txt
 pytest -q
 ```
 
-`requirements-chain.txt` (`web3`) is only needed for the RPC-provider
-tests; the rest of the suite runs with just `requirements.txt`. The
-`guardian/*` core has no external dependencies beyond that, so it's also
-runnable with:
+`requirements-chain.txt` (`web3`) is needed by the RPC and on-chain
+attestation tests. `requirements-mcp.txt` installs the MCP SDK used by
+`mcp_server.py`. PyJWT and cryptography are core dependencies because OAA
+attestations use JWTs and Ed25519 signing. The CI install matches this
+full test environment.
 
 ```bash
 PYTHONPATH=. python3 -m unittest discover -s tests -v

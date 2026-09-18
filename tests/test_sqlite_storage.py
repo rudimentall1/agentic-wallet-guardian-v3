@@ -6,6 +6,19 @@ from guardian.memory.sqlite_storage import SQLiteStorage
 
 
 class TestSQLiteStorage(unittest.TestCase):
+    def test_append_works_without_sqlite_unixepoch(self):
+        # Regression guard: supported SQLite runtimes may not provide
+        # unixepoch(), so storage must not depend on optional SQL functions.
+        with tempfile.TemporaryDirectory() as d:
+            store = SQLiteStorage(str(Path(d) / "test.db"))
+            store.append("agent-1", {"ok": True})
+            row = store._conn.execute(
+                "SELECT created_at FROM history WHERE key = ?", ("agent-1",)
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertGreater(row[0], 0)
+            store.close()
+
     def test_append_and_get(self):
         with tempfile.TemporaryDirectory() as d:
             store = SQLiteStorage(str(Path(d) / "test.db"))

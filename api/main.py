@@ -15,10 +15,12 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse
 
 from api.schemas import DecisionRequest, DecisionResponse
 from api.security import RateLimitMiddleware, check_agent_bound_key, make_api_key_dependency
@@ -26,12 +28,13 @@ from guardian.config import get_config
 from guardian.core.intent import ActionIntent
 from guardian.decision.engine import DecisionEngine
 from guardian.decision.rules import SUPPORTED_CHAINS
+from guardian.arc import ARC_CHAIN, ARC_CHAIN_ID, ARC_EXPLORER_URL, ARC_USDC_ADDRESS, build_arc_engine, prepare_arc_payment, arc_network_status
 
 logger = logging.getLogger("guardian.api")
 
 app = FastAPI(
     title="Agentic Wallet Guardian",
-    version="3.1.0",
+    version="3.2.0",
     description=(
         "Decision infrastructure for autonomous AI agents acting on blockchain "
         "wallets. Agents submit an action intent and receive an explainable "
@@ -47,6 +50,7 @@ config = get_config()
 # shared store (Redis/Postgres) — see guardian/memory/storage.py, or set
 # GUARDIAN_STORAGE_BACKEND=sqlite for a single-instance persistent default.
 engine = DecisionEngine(config=config)
+arc_engine = build_arc_engine(config)
 
 require_api_key = make_api_key_dependency(config)
 app.add_middleware(RateLimitMiddleware, limit_per_minute=config.rate_limit_per_minute)
@@ -130,6 +134,41 @@ def decide(payload: DecisionRequest, authorization: Optional[str] = Header(defau
     )
     decision = engine.evaluate(intent)
     return decision.to_dict()
+
+
+@app.get("/arc", include_in_schema=False)
+def arc_demo():
+    return FileResponse(str(Path(__file__).parent.parent / "examples" / "arc-demo.html"))
+
+
+@app.get("/arc/status", tags=["arc"])
+def arc_status():
+    status = arc_network_status()
+    return {"project": "Agentic Wallet Guardian", "arc": status}
+
+
+@app.post("/arc/prepare", tags=["arc"])
+def arc_prepare(payload: DecisionRequest):
+    if payload.chain.lower() != ARC_CHAIN:
+        raise HTTPException(400, "Arc payment endpoint only accepts chain='arc'.")
+    if payload.action_type != "transfer":
+        raise HTTPException(400, "Arc demo currently supports only USDC transfer payments.")
+    if (payload.from_token or "").lower() != ARC_USDC_ADDRESS.lower():
+        raise HTTPException(400, f"Use Arc mainnet USDC ERC-20 interface {ARC_USDC_ADDRESS}.")
+    if not payload.target or not payload.wallet:
+        raise HTTPException(422, "wallet and target are required.")
+
+    intent = ActionIntent(
+        agent_id=payload.agent_id,
+        wallet=payload.wallet,
+        chain=ARC_CHAIN,
+        action_type="transfer",
+        target=payload.target,
+        from_token=ARC_USDC_ADDRESS,
+        amount=payload.amount,
+        metadata=payload.metadata,
+    )
+    return prepare_arc_payment(arc_engine, intent)
 
 
 @app.get("/agents/{agent_id}/history", tags=["core"])
