@@ -16,6 +16,10 @@ It runs on your own infrastructure, using your own policy rules and your
 own reputation data - see [Why self-hosted](#why-self-hosted) for why that
 matters and how this differs from calling a hosted security API directly.
 
+Guardian is chain- and use-case-agnostic - Arc/USDC below is one live
+deployment, not the whole scope. See [docs/hackathons.md](docs/hackathons.md)
+for which track this submission targets and why.
+
 
 ## Arc Mainnet Demo
 
