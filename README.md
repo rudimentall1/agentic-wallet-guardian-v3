@@ -16,6 +16,20 @@ It runs on your own infrastructure, using your own policy rules and your
 own reputation data - see [Why self-hosted](#why-self-hosted) for why that
 matters and how this differs from calling a hosted security API directly.
 
+
+## Arc Mainnet Demo
+
+**Live demo:** http://77.239.125.37:8765/arc
+
+Agentic Wallet Guardian is deployed on Arc mainnet and includes a live browser demo for USDC payments. The Guardian evaluates the requested operation before execution, applies its security policies, and only an approved operation is passed to the user's wallet for signing.
+
+**Verified Arc mainnet transaction:**
+0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf
+
+The transaction was successfully executed on Arc mainnet using USDC through the Guardian demo.
+
+---
+
 **See it decide, live:** run the API locally (`GUARDIAN_ENABLE_CORS_FOR_BROWSER_DEMO=true
 uvicorn api.main:app --reload`), then open [`examples/browser-demo.html`](examples/browser-demo.html)
 in a browser - no build step, no server for the page itself. Every
