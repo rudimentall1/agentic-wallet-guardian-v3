@@ -24,6 +24,7 @@ for which track this submission targets and why.
 ## Arc Mainnet Demo
 
 **Live demo:** http://77.239.125.37:8765/arc
+
 **Demo video:** https://youtu.be/srH0ZLwtwqQ
 
 Agentic Wallet Guardian is deployed on Arc mainnet and includes a live browser demo for USDC payments. The Guardian evaluates the requested operation before execution, applies its security policies, and only an approved operation is passed to the user's wallet for signing.
