@@ -4,9 +4,7 @@
 
 📄 [Read the white paper](docs/whitepaper.pdf)
 
-**A self-hosted decision engine that sits between an AI agent and blockchain
-execution.** Agents submit a proposed action, Guardian returns an
-explainable ALLOW / WARN / BLOCK before anything gets signed or broadcast.
+**Let AI agents transact on-chain without giving them unrestricted control of the wallet.** Guardian evaluates each proposed action before signing or broadcast and returns an explainable ALLOW / WARN / BLOCK decision.
 
 ```
 POST /decision   ->   ALLOW / WARN / BLOCK  (with a reasoned explanation)
