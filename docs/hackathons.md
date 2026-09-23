@@ -16,6 +16,13 @@ and spending-cap enforcement map directly onto the Circle/Arc
 digital-finance use case: an AI agent's USDC payment intent is evaluated
 and can be blocked or require confirmation before it is ever signed.
 
+### Why this matters for Arc
+
+Arc's current builder thesis explicitly highlights the agentic economy and intelligent accounts: agents can hold funds, transact in USDC, and operate within bounded mandates and risk limits.
+
+Guardian adds a security boundary around that model. An agent can initiate the intent, but Guardian evaluates it before the wallet signs, and the GuardianValidator can enforce an approved decision on-chain.
+
+This positions Guardian as infrastructure for safer agentic commerce on Arc, rather than an Arc-specific demo only.
 ## [Next hackathon name]
 [link]
 
