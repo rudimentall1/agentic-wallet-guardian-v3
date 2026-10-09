@@ -8,12 +8,6 @@ Select the preview to play the video in your browser.
 
 [![agentic-wallet-guardian-v3 MCP server](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3/badges/card.svg)](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3)
 
-## Watch the demo
-
-[![Watch the demo on YouTube](https://img.youtube.com/vi/srH0ZLwtwqQ/hqdefault.jpg)](https://www.youtube.com/watch?v=srH0ZLwtwqQ)
-
-Select the preview to play the video in your browser.
-
 📄 [Read the white paper](docs/whitepaper.pdf)
 
 **Let AI agents transact on-chain without giving them unrestricted control of the wallet.** Guardian evaluates each proposed action before signing or broadcast and returns an explainable ALLOW / WARN / BLOCK decision.
