@@ -1,5 +1,11 @@
 <!-- mcp-name: io.github.rudimentall1/agentic-wallet-guardian-v3 -->
 # Agentic Wallet Guardian
+## Watch the demo
+
+[![Watch the demo on YouTube](https://img.youtube.com/vi/srH0ZLwtwqQ/hqdefault.jpg)](https://www.youtube.com/watch?v=srH0ZLwtwqQ)
+
+Select the preview to play the video in your browser.
+
 [![agentic-wallet-guardian-v3 MCP server](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3/badges/card.svg)](https://glama.ai/mcp/servers/rudimentall1/agentic-wallet-guardian-v3)
 
 ## Watch the demo
