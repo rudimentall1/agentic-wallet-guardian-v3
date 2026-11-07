@@ -170,7 +170,44 @@ def arc_prepare(payload: DecisionRequest):
         amount=payload.amount,
         metadata=payload.metadata,
     )
-    return prepare_arc_payment(arc_engine, intent)
+    prepared = prepare_arc_payment(arc_engine, intent)
+    if not prepared.get("transaction_ready"):
+        return prepared
+    try:
+        from guardian.verigate_arc import authorize_arc_payment
+        bridge = authorize_arc_payment(
+            sender=payload.wallet,
+            recipient=payload.target,
+            amount=str(payload.amount),
+            transaction=prepared["transaction"],
+        )
+    except Exception as exc:
+        logger.exception("Verigate Arc authorization failed closed")
+        raise HTTPException(status_code=503, detail=f"Verigate authorization unavailable; transaction blocked: {exc}") from exc
+    prepared["verigate"] = {
+        "authorization": bridge["authorization"],
+        "decision_receipt": bridge.get("decision_receipt"),
+        "authorization_id": bridge.get("authorization_id"),
+        "arc_network": bridge.get("arc_network"),
+    }
+    prepared["transaction"] = bridge["wallet_transaction"]
+    prepared["transaction_ready"] = True
+    prepared["execution_gate"] = "VERIGATE_AUTHORIZED_NOT_YET_CONSUMED"
+    return prepared
+
+
+@app.post("/arc/consume", tags=["arc"])
+def consume_verigate_arc(payload: dict):
+    authorization = payload.get("authorization")
+    if not isinstance(authorization, dict):
+        raise HTTPException(status_code=400, detail="Verigate authorization object is required")
+    try:
+        from guardian.verigate_arc import consume_arc_authorization
+        result = consume_arc_authorization(authorization)
+    except Exception as exc:
+        logger.exception("Verigate Arc execution consume failed")
+        raise HTTPException(status_code=403, detail=f"Verigate execution gate refused; wallet must not broadcast: {exc}") from exc
+    return {"execute": True, "reason": result.get("reason", "consumed")}
 
 
 @app.get("/agents/{agent_id}/history", tags=["core"])
