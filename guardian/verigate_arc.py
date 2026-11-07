@@ -13,7 +13,7 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from guardian.arc import ARC_CHAIN, ARC_CHAIN_ID, ARC_USDC_ADDRESS
+from guardian.arc import ARC_CHAIN, ARC_CHAIN_ID, ARC_USDC_ADDRESS, ARC_DEMO_AGENT_ID
 
 
 def _required(name: str) -> str:
@@ -39,6 +39,8 @@ def authorize_arc_payment(*, sender: str, recipient: str, amount: str, transacti
     """Sign the exact ActionIntent and request Verigate's signed execution authorization."""
     base_url = _required("VERIGATE_URL").rstrip("/")
     agent_id = _required("VERIGATE_AGENT_ID")
+    if agent_id != ARC_DEMO_AGENT_ID:
+        raise RuntimeError(f"VERIGATE_AGENT_ID must equal Guardian Arc agent id: {ARC_DEMO_AGENT_ID}")
     identity_id = _required("VERIGATE_IDENTITY_ID")
     capability_id = _required("VERIGATE_CAPABILITY_ID")
     api_key = os.environ.get("VERIGATE_API_KEY", "").strip()
@@ -68,7 +70,7 @@ def authorize_arc_payment(*, sender: str, recipient: str, amount: str, transacti
         "action_type": "payment",
         "target": recipient.lower(),
         "resource": "",
-        "amount": format(amount_decimal, "f"),
+        "amount": None,
         "amount_exact": format(amount_decimal, "f"),
         "asset": "USDC",
         "network": ARC_CHAIN,
