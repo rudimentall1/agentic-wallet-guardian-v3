@@ -64,7 +64,7 @@ def test_authorize_signs_the_exact_verigate_action(monkeypatch, tmp_path):
         sender=sender,
         recipient=recipient,
         amount="0.25",
-        transaction={"data": calldata},
+        transaction={"data": calldata, "gas": "0x5208", "maxFeePerGas": "0x77359400", "maxPriorityFeePerGas": "0x0"},
     )
 
     assert captured["url"] == "https://verigate.example/v1/integrations/arc/authorize"
@@ -100,7 +100,12 @@ def test_authorize_signs_the_exact_verigate_action(monkeypatch, tmp_path):
     )
 
     assert result["authorization"]["payload"]["authorization_id"] == "auth-1"
-    assert result["wallet_transaction"] == wallet_tx
+    assert result["wallet_transaction"]["chainId"] == wallet_tx["chainId"]
+    assert result["wallet_transaction"]["gas"] == "0x5208"
+    assert result["wallet_transaction"]["maxFeePerGas"] == "0x77359400"
+    assert result["wallet_transaction"]["maxPriorityFeePerGas"] == "0x0"
+    assert captured["body"]["metadata"]["evm_transaction"]["gas"] == 21000
+    assert captured["body"]["metadata"]["evm_transaction"]["max_fee_per_gas"] == 2000000000
 
 
 def test_authorize_rejects_wallet_transaction_drift(monkeypatch, tmp_path):
@@ -132,5 +137,5 @@ def test_authorize_rejects_wallet_transaction_drift(monkeypatch, tmp_path):
             sender=sender,
             recipient=recipient,
             amount="0.25",
-            transaction={"data": calldata},
+            transaction={"data": calldata, "gas": "0x5208", "maxFeePerGas": "0x77359400", "maxPriorityFeePerGas": "0x0"},
         )
