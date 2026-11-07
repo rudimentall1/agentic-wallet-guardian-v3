@@ -190,7 +190,7 @@ def arc_prepare(payload: DecisionRequest):
         "authorization_id": bridge.get("authorization_id"),
         "arc_network": bridge.get("arc_network"),
     }
-    prepared["transaction"] = bridge["wallet_transaction"]
+    prepared["transaction"] = {**prepared["transaction"], **bridge["wallet_transaction"]}
     prepared["transaction_ready"] = True
     prepared["execution_gate"] = "VERIGATE_AUTHORIZED_NOT_YET_CONSUMED"
     return prepared
