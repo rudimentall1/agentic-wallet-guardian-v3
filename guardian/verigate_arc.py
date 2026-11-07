@@ -70,7 +70,7 @@ def authorize_arc_payment(*, sender: str, recipient: str, amount: str, transacti
         "action_type": "payment",
         "target": recipient.lower(),
         "resource": "",
-        "amount": None,
+        "amount": format(amount_decimal, "f"),
         "amount_exact": format(amount_decimal, "f"),
         "asset": "USDC",
         "network": ARC_CHAIN,
