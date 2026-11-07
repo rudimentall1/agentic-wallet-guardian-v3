@@ -25,6 +25,7 @@
   <div class="card">
     <button class="primary" id="connect">Connect Arc wallet</button>
     <span id="wallet"></span>
+    <label style="display:block;margin-top:12px">Guardian API key<input id="guardianKey" type="password" autocomplete="off" placeholder="Required to authorize and consume payments"></label>
     <div id="status" class="mono" style="margin-top:12px"></div>
   </div>
 
@@ -56,6 +57,22 @@ const ARC_CHAIN = {
 let account = null;
 let prepared = null;
 const $ = id => document.getElementById(id);
+const guardianHeaders = () => ({'Content-Type':'application/json', 'Authorization': 'Bearer ' + $('guardianKey').value.trim()});
+
+function assertAuthorizedTransaction(tx) {
+  const a = prepared?.verigate?.authorization?.payload?.action?.metadata?.evm_transaction;
+  if (!a) throw new Error('Verigate authorization has no signed Arc transaction artifact.');
+  const same = (left, right) => String(left).toLowerCase() === String(right).toLowerCase();
+  const sameQuantity = (left, right) => BigInt(left) === BigInt(right);
+  if (!same(a.from, tx.from) || !same(a.to, tx.to) || !same(a.data, tx.data)) {
+    throw new Error('Wallet transaction differs from the Verigate-authorized sender, token contract or calldata.');
+  }
+  if (!sameQuantity(a.chain_id, tx.chainId) || !sameQuantity(a.value_wei, tx.value) ||
+      !sameQuantity(a.gas, tx.gas) || !sameQuantity(a.max_fee_per_gas, tx.maxFeePerGas) ||
+      !sameQuantity(a.max_priority_fee_per_gas, tx.maxPriorityFeePerGas)) {
+    throw new Error('Wallet transaction chain, value or gas parameters differ from the Verigate authorization.');
+  }
+}
 
 // crypto.randomUUID() is unavailable on non-HTTPS origins. Keep the demo
 // compatible with the public HTTP deployment while retaining cryptographic
@@ -105,7 +122,7 @@ async function askGuardian() {
   $('send').disabled = true;
   $('result').textContent = 'Guardian evaluating...';
   prepared = await fetch('/arc/prepare', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:guardianHeaders(),
     body: JSON.stringify({
       agent_id:'arc-demo-agent', wallet:account, chain:'arc', action_type:'transfer',
       target:recipient, from_token:'0x3600000000000000000000000000000000000000', amount:amount, metadata:{}
@@ -122,14 +139,26 @@ async function askGuardian() {
 }
 
 async function send() {
-  if (!prepared?.transaction_ready) return;
+  if (!prepared?.transaction_ready || !prepared?.verigate?.authorization) {
+    throw new Error('No Verigate authorization. Wallet broadcast is disabled.');
+  }
   const tx = prepared.transaction;
+  assertAuthorizedTransaction(tx);
+  $('send').disabled = true;
+  $('result').textContent = 'Consuming Verigate one-time execution authorization...';
+  const gate = await fetch('/arc/consume', {
+    method:'POST', headers:guardianHeaders(),
+    body: JSON.stringify({authorization: prepared.verigate.authorization})
+  }).then(async r => {
+    const j = await r.json();
+    if (!r.ok || j.execute !== true) throw new Error(j.detail || j.reason || 'Verigate refused execution');
+    return j;
+  });
   const hash = await ethereum.request({ method:'eth_sendTransaction', params:[{
     from: tx.from, to: tx.to, data: tx.data, value: tx.value,
     gas: tx.gas, maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas
   }]});
-  $('send').disabled = true;
-  $('result').innerHTML = `Broadcast: ${hash}\n<a href="https://explorer.arc.io/tx/${hash}" target="_blank">Open Arc Explorer</a>`;
+  $('result').innerHTML = `Verigate consumed: ${gate.reason}\\nBroadcast: ${hash}\\n<a href="https://explorer.arc.io/tx/${hash}" target="_blank">Open Arc Explorer</a>`;
 }
 
 $('connect').onclick = () => connect().catch(e => $('status').textContent = e.message);
