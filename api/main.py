@@ -15,6 +15,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from typing import Optional
@@ -151,7 +152,7 @@ def arc_status():
 def arc_prepare(payload: DecisionRequest, authorization: Optional[str] = Header(default=None)):
     if not config.auth_enabled:
         raise HTTPException(status_code=503, detail="Guardian API authentication must be configured before enabling Verigate signing")
-    check_agent_bound_key(authorization, ARC_DEMO_AGENT_ID, config)
+    check_agent_bound_key(authorization, os.environ.get("VERIGATE_AGENT_ID", "guardian-arc-agent"), config)
     if payload.chain.lower() != ARC_CHAIN:
         raise HTTPException(400, "Arc payment endpoint only accepts chain='arc'.")
     if payload.action_type != "transfer":
