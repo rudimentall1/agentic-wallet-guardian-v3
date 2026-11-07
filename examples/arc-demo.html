@@ -59,6 +59,21 @@ let prepared = null;
 const $ = id => document.getElementById(id);
 const guardianHeaders = () => ({'Content-Type':'application/json', 'Authorization': 'Bearer ' + $('guardianKey').value.trim()});
 
+function assertAuthorizedTransaction(tx) {
+  const a = prepared?.verigate?.authorization?.payload?.action?.metadata?.evm_transaction;
+  if (!a) throw new Error('Verigate authorization has no signed Arc transaction artifact.');
+  const same = (left, right) => String(left).toLowerCase() === String(right).toLowerCase();
+  const sameQuantity = (left, right) => BigInt(left) === BigInt(right);
+  if (!same(a.from, tx.from) || !same(a.to, tx.to) || !same(a.data, tx.data)) {
+    throw new Error('Wallet transaction differs from the Verigate-authorized sender, token contract or calldata.');
+  }
+  if (!sameQuantity(a.chain_id, tx.chainId) || !sameQuantity(a.value_wei, tx.value) ||
+      !sameQuantity(a.gas, tx.gas) || !sameQuantity(a.max_fee_per_gas, tx.maxFeePerGas) ||
+      !sameQuantity(a.max_priority_fee_per_gas, tx.maxPriorityFeePerGas)) {
+    throw new Error('Wallet transaction chain, value or gas parameters differ from the Verigate authorization.');
+  }
+}
+
 // crypto.randomUUID() is unavailable on non-HTTPS origins. Keep the demo
 // compatible with the public HTTP deployment while retaining cryptographic
 // randomness through getRandomValues().
@@ -127,6 +142,8 @@ async function send() {
   if (!prepared?.transaction_ready || !prepared?.verigate?.authorization) {
     throw new Error('No Verigate authorization. Wallet broadcast is disabled.');
   }
+  const tx = prepared.transaction;
+  assertAuthorizedTransaction(tx);
   $('send').disabled = true;
   $('result').textContent = 'Consuming Verigate one-time execution authorization...';
   const gate = await fetch('/arc/consume', {
@@ -137,7 +154,6 @@ async function send() {
     if (!r.ok || j.execute !== true) throw new Error(j.detail || j.reason || 'Verigate refused execution');
     return j;
   });
-  const tx = prepared.transaction;
   const hash = await ethereum.request({ method:'eth_sendTransaction', params:[{
     from: tx.from, to: tx.to, data: tx.data, value: tx.value,
     gas: tx.gas, maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas
