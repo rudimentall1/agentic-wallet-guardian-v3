@@ -54,6 +54,9 @@ def authorize_arc_payment(*, sender: str, recipient: str, amount: str, transacti
             "to": ARC_USDC_ADDRESS.lower(),
             "value_wei": 0,
             "data": transaction["data"].lower(),
+            "gas": int(transaction["gas"], 16),
+            "max_fee_per_gas": int(transaction["maxFeePerGas"], 16),
+            "max_priority_fee_per_gas": int(transaction["maxPriorityFeePerGas"], 16),
         },
         "arc": {
             "chain_id": ARC_CHAIN_ID,
@@ -123,6 +126,12 @@ def authorize_arc_payment(*, sender: str, recipient: str, amount: str, transacti
     for field, value in expected.items():
         if str(wallet_tx.get(field, "")).lower() != str(value).lower():
             raise RuntimeError(f"Verigate wallet transaction mismatch: {field}")
+    wallet_tx = {
+        **wallet_tx,
+        "gas": transaction["gas"],
+        "maxFeePerGas": transaction["maxFeePerGas"],
+        "maxPriorityFeePerGas": transaction["maxPriorityFeePerGas"],
+    }
     return {
         "authorization": authorization,
         "wallet_transaction": wallet_tx,
