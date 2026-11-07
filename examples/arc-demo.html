@@ -122,14 +122,25 @@ async function askGuardian() {
 }
 
 async function send() {
-  if (!prepared?.transaction_ready) return;
+  if (!prepared?.transaction_ready || !prepared?.verigate?.authorization) {
+    throw new Error('No Verigate authorization. Wallet broadcast is disabled.');
+  }
+  $('send').disabled = true;
+  $('result').textContent = 'Consuming Verigate one-time execution authorization...';
+  const gate = await fetch('/arc/consume', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({authorization: prepared.verigate.authorization})
+  }).then(async r => {
+    const j = await r.json();
+    if (!r.ok || j.execute !== true) throw new Error(j.detail || j.reason || 'Verigate refused execution');
+    return j;
+  });
   const tx = prepared.transaction;
   const hash = await ethereum.request({ method:'eth_sendTransaction', params:[{
     from: tx.from, to: tx.to, data: tx.data, value: tx.value,
     gas: tx.gas, maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas
   }]});
-  $('send').disabled = true;
-  $('result').innerHTML = `Broadcast: ${hash}\n<a href="https://explorer.arc.io/tx/${hash}" target="_blank">Open Arc Explorer</a>`;
+  $('result').innerHTML = `Verigate consumed: ${gate.reason}\\nBroadcast: ${hash}\\n<a href="https://explorer.arc.io/tx/${hash}" target="_blank">Open Arc Explorer</a>`;
 }
 
 $('connect').onclick = () => connect().catch(e => $('status').textContent = e.message);
