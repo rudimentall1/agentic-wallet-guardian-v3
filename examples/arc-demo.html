@@ -25,6 +25,7 @@
   <div class="card">
     <button class="primary" id="connect">Connect Arc wallet</button>
     <span id="wallet"></span>
+    <label style="display:block;margin-top:12px">Guardian API key<input id="guardianKey" type="password" autocomplete="off" placeholder="Required to authorize and consume payments"></label>
     <div id="status" class="mono" style="margin-top:12px"></div>
   </div>
 
@@ -56,6 +57,7 @@ const ARC_CHAIN = {
 let account = null;
 let prepared = null;
 const $ = id => document.getElementById(id);
+const guardianHeaders = () => ({'Content-Type':'application/json', 'Authorization': 'Bearer ' + $('guardianKey').value.trim()});
 
 // crypto.randomUUID() is unavailable on non-HTTPS origins. Keep the demo
 // compatible with the public HTTP deployment while retaining cryptographic
@@ -105,7 +107,7 @@ async function askGuardian() {
   $('send').disabled = true;
   $('result').textContent = 'Guardian evaluating...';
   prepared = await fetch('/arc/prepare', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:guardianHeaders(),
     body: JSON.stringify({
       agent_id:'arc-demo-agent', wallet:account, chain:'arc', action_type:'transfer',
       target:recipient, from_token:'0x3600000000000000000000000000000000000000', amount:amount, metadata:{}
@@ -128,7 +130,7 @@ async function send() {
   $('send').disabled = true;
   $('result').textContent = 'Consuming Verigate one-time execution authorization...';
   const gate = await fetch('/arc/consume', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:guardianHeaders(),
     body: JSON.stringify({authorization: prepared.verigate.authorization})
   }).then(async r => {
     const j = await r.json();
