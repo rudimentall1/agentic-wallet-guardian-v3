@@ -15,6 +15,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from typing import Optional
@@ -148,7 +149,10 @@ def arc_status():
 
 
 @app.post("/arc/prepare", tags=["arc"])
-def arc_prepare(payload: DecisionRequest):
+def arc_prepare(payload: DecisionRequest, authorization: Optional[str] = Header(default=None)):
+    if not config.auth_enabled:
+        raise HTTPException(status_code=503, detail="Guardian API authentication must be configured before enabling Verigate signing")
+    check_agent_bound_key(authorization, os.environ.get("VERIGATE_AGENT_ID", "guardian-arc-agent"), config)
     if payload.chain.lower() != ARC_CHAIN:
         raise HTTPException(400, "Arc payment endpoint only accepts chain='arc'.")
     if payload.action_type != "transfer":
@@ -197,7 +201,10 @@ def arc_prepare(payload: DecisionRequest):
 
 
 @app.post("/arc/consume", tags=["arc"])
-def consume_verigate_arc(payload: dict):
+def consume_verigate_arc(payload: dict, guardian_authorization: Optional[str] = Header(default=None)):
+    if not config.auth_enabled:
+        raise HTTPException(status_code=503, detail="Guardian API authentication must be configured before consuming Verigate authorizations")
+    check_agent_bound_key(guardian_authorization, os.environ.get("VERIGATE_AGENT_ID", "guardian-arc-agent"), config)
     authorization = payload.get("authorization")
     if not isinstance(authorization, dict):
         raise HTTPException(status_code=400, detail="Verigate authorization object is required")
