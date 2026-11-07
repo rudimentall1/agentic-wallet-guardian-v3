@@ -201,10 +201,11 @@ def arc_prepare(payload: DecisionRequest, authorization: Optional[str] = Header(
 
 
 @app.post("/arc/consume", tags=["arc"])
-def consume_verigate_arc(payload: dict, guardian_authorization: Optional[str] = Header(default=None)):
+def consume_verigate_arc(payload: dict, authorization: Optional[str] = Header(default=None)):
     if not config.auth_enabled:
         raise HTTPException(status_code=503, detail="Guardian API authentication must be configured before consuming Verigate authorizations")
-    check_agent_bound_key(guardian_authorization, os.environ.get("VERIGATE_AGENT_ID", "guardian-arc-agent"), config)
+    # The browser sends the same Authorization: Bearer header used by /arc/prepare.
+    check_agent_bound_key(authorization, os.environ.get("VERIGATE_AGENT_ID", "guardian-arc-agent"), config)
     authorization = payload.get("authorization")
     if not isinstance(authorization, dict):
         raise HTTPException(status_code=400, detail="Verigate authorization object is required")
